@@ -1,10 +1,10 @@
-from math import ceil, floor, log, sqrt
+import gc
+from math import floor, log, sqrt
 from random import sample
 
 import numpy as np
 import torch
-from torch.autograd import Variable
-from torch.distributions import Normal, Uniform
+from torch.distributions import Normal, MultivariateNormal, Uniform
 
 
 class DESOptimizer(object):
@@ -326,8 +326,6 @@ class DES(object):
         pc = torch.zeros((self.problem_size, self.hist_size),
                          device=self.device)
 
-        self.iter_ = -1
-
         delta = (self.upper - self.lower) * 0.1
         uniform = Uniform(self.lower + delta, self.upper + delta)
         # normal = Normal(torch.tensor([0.0]), torch.tensor([1.0]))
@@ -335,14 +333,23 @@ class DES(object):
         normal = Normal(
             self.initial_value, torch.tensor([0.2], device=self.device))
 
+        # XXX this thing doesn't work if we modify lambda on the fly
+        mean = self.initial_value.unsqueeze(1).repeat(1, self.lambda_).cpu()
+        normal_covariance_matrix = (torch.eye(self.lambda_, device=self.device) *
+        (self.upper[0] / 4.5)).cpu()
+        normal = MultivariateNormal(mean, normal_covariance_matrix)
+
         best_val_log = []
-        while self.count_eval < self.budget and self.iter_ < self.max_iter:
+        while self.count_eval < self.budget:  # and self.iter_ < self.max_iter:
 
             hist_head = -1
-            restart_iter = -1
+            self.iter_ = -1
+
             history = [None]*self.hist_size
             self.Ft = self.initFt
 
+            gc.collect()
+            torch.cuda.empty_cache()
             print(f"Before population: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
             population = torch.empty((self.problem_size, self.lambda_),
                                      device=self.device)
@@ -354,7 +361,8 @@ class DES(object):
             cum_mean = (self.upper + self.lower) / 2
 
             if self.nn_train:
-                population = normal.sample((self.lambda_,)).t().to(self.device)
+                population = normal.sample().to(self.device)
+                #  population = normal.sample((self.lambda_,)).t().to(self.device)
                 population[:, 0] = self.initial_value
             else:
                 population = uniform.sample((self.lambda_,)).transpose(0, 1).to(self.device)
@@ -389,16 +397,12 @@ class DES(object):
 
             stoptol = False
 
-            while self.count_eval < self.budget and not stoptol and self.iter_ < self.max_iter:
-                #  torch.cuda.empty_cache()
+            while self.count_eval < self.budget and not stoptol:  # and self.iter_ < self.max_iter:
+                torch.cuda.empty_cache()
+                gc.collect()
                 #  print(f"In loop: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
                 self.iter_ += 1
-                restart_iter += 1
                 hist_head = (hist_head + 1) % self.hist_size
-                #  self.mu = floor(self.lambda_ / 2)
-                #  self.weights = log(self.mu + 1) - torch.arange(1., self.mu + 1,
-                                                               #  device=self.device).log()
-                #  self.weights = self.weights / sum(self.weights)
 
                 #  if self.log_Ft:
                     #  Ft_log.append(self.Ft)
@@ -422,14 +426,9 @@ class DES(object):
 
                 # Select best 'mu' individuals of population
                 selection = torch.argsort(fitness)[:self.mu]
-                #  selected_points = population[:, selection]
 
                 # Save selected population in the history buffer
-                #  history[hist_head] = torch.zeros((self.problem_size, self.mu),
-                                                 #  device=torch.device('cpu'))
-                #  history[hist_head] = (selected_points * hist_norm / self.Ft).cpu()
-                history.insert(hist_head,
-                               (population[:, selection] * hist_norm / self.Ft).cpu())
+                history[hist_head] = (population[:, selection] * hist_norm / self.Ft).cpu()
 
                 # Calculate weighted mean of selected points
                 old_mean = new_mean
@@ -455,7 +454,7 @@ class DES(object):
 
                 print(f"|step|={sum(step**2)}")
                 # Sample from history with uniform distribution
-                limit = hist_head + 1 if restart_iter <= self.hist_size else self.hist_size
+                limit = hist_head + 1 if self.iter_ <= self.hist_size else self.hist_size
                 history_sample1 = torch.randint(0, limit, (self.lambda_,),
                                                 device=self.cpu)
                 history_sample2 = torch.randint(0, limit, (self.lambda_,),

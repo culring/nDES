@@ -16,7 +16,7 @@ torch.manual_seed(1235)
 # hyperparameters
 hl = 10
 lr = 0.01
-num_epoch = 5000
+num_epoch = 500000
 DES_TRAINING = True
 #  DEVICE = torch.device("cpu")
 DEVICE = torch.device("cuda")
@@ -108,8 +108,10 @@ print(f"Num params: {sum([param.nelement() for param in model.parameters()])}")
 
 # choose optimizer and loss function
 criterion = nn.CrossEntropyLoss()
-#  criterion = nn.NLLLoss()
-optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+# optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+# optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+optimizer = torch.optim.Adam(model.parameters())
+
 
 if DES_TRAINING:
     for x, y in torch.utils.data.DataLoader(train_dataset,
@@ -122,13 +124,14 @@ if DES_TRAINING:
     des_optim = DESOptimizer(model, criterion, x_train, y_train, restarts=None,
                              lower=-3., upper=3., budget=num_epoch, tol=1e-6,
                              nn_train=True, lambda_=4000, history=5,
-                             log_best_val=True, device=DEVICE)
+                             log_best_val=False, device=DEVICE)
     model = des_optim.run()
     test_loader = torch.utils.data.DataLoader(
         test_dataset, batch_size=1000, shuffle=True)
     test(des_optim.model, DEVICE, test_loader)
 
 else:
+    model.train()
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=64, shuffle=True)
     test_loader = torch.utils.data.DataLoader(
