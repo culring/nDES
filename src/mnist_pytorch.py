@@ -18,7 +18,7 @@ hl = 10
 lr = 0.01
 num_epoch = 500000
 DES_TRAINING = True
-#  DEVICE = torch.device("cpu")
+#DEVICE = torch.device("cpu")
 DEVICE = torch.device("cuda")
 
 

@@ -326,12 +326,14 @@ class DES(object):
         pc = torch.zeros((self.problem_size, self.hist_size),
                          device=self.device)
 
-        delta = (self.upper - self.lower) * 0.1
-        uniform = Uniform(self.lower + delta, self.upper + delta)
+        #delta = (self.upper - self.lower) * 0.1
+        uniform = Uniform(self.lower * 0.9, self.upper * 0.9)
         # normal = Normal(torch.tensor([0.0]), torch.tensor([1.0]))
         # normal = Normal(self.initial_value, torch.tensor([0.2]))
-        normal = Normal(
-            self.initial_value, torch.tensor([0.2], device=self.device))
+        sigma = 1.2
+        mvn = MultivariateNormal(self.initial_value, scale_tril=torch.diag(torch.tensor([sigma]).repeat(self.problem_size)))
+        #normal = Normal(
+        #    self.initial_value, torch.tensor([0.2], device=self.device))
 
         # XXX this thing doesn't work if we modify lambda on the fly
         mean = self.initial_value.unsqueeze(1).repeat(1, self.lambda_).cpu()
@@ -361,7 +363,8 @@ class DES(object):
             cum_mean = (self.upper + self.lower) / 2
 
             if self.nn_train:
-                population = normal.sample().to(self.device)
+                #population = normal.sample().to(self.device)
+                population = mvn.sample().to(self.device)
                 #  population = normal.sample((self.lambda_,)).t().to(self.device)
                 population[:, 0] = self.initial_value
             else:
