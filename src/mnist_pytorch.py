@@ -121,9 +121,9 @@ if DES_TRAINING:
         x_train, y_train = x.to(DEVICE), y.to(DEVICE)
         #  print(f"After dataset: {torch.cuda.memory_allocated(DEVICE) / (1024**3)}")
 
-    des_optim = DESOptimizer(model, criterion, x_train, y_train, restarts=None,
-                             lower=-3., upper=3., budget=num_epoch, tol=1e-6,
-                             nn_train=True, lambda_=4000, history=5,
+    des_optim = DESOptimizer(model, criterion, x_train, y_train, restarts=10,
+                             lower=-1., upper=1., budget=num_epoch, tol=1e-6,
+                             nn_train=True, lambda_=4000, history=16,
                              log_best_val=False, device=DEVICE)
     model = des_optim.run()
     test_loader = torch.utils.data.DataLoader(

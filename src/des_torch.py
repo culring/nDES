@@ -6,7 +6,6 @@ import numpy as np
 import torch
 from torch.distributions import Normal, MultivariateNormal, Uniform
 
-
 class DESOptimizer(object):
 
     """Interface for the DES optimizer for the neural networks optimization."""
@@ -111,16 +110,17 @@ class DES(object):
         self.upper = upper
 
         self.device = kwargs.get("device", torch.device('cpu'))
+        self.dtype = kwargs.get("dtype", torch.float32)
 
         if np.isscalar(lower):
             self.lower = torch.tensor(
                 [lower]*self.problem_size, device=self.device,
-                dtype=torch.float)
+                dtype=self.dtype)
 
         if np.isscalar(upper):
             self.upper = torch.tensor(
                 [upper]*self.problem_size, device=self.device,
-                dtype=torch.float)
+                dtype=self.dtype)
 
         # Neural networks training mode
         self.nn_train = kwargs.get("nn_train", False)
@@ -137,7 +137,7 @@ class DES(object):
         self.budget = kwargs.get("budget", 10000 * self.problem_size)
         #  Population starting size
         self.init_lambda = kwargs.get("lambda_", 4 * self.problem_size)
-        print(f'Problem size: {self.problem_size} lambda: {self.init_lambda}')
+        #  print(f'Problem size: {self.problem_size} lambda: {self.init_lambda}')
         #  Population ending size
         self.minlambda = kwargs.get("minlambda", 4 * self.problem_size)
         #  Population size
@@ -146,11 +146,12 @@ class DES(object):
         self.mu = kwargs.get("mu", floor(self.lambda_ / 2))
         #  Weights to calculate mean from selected individuals
         self.weights = log(self.mu + 1) - torch.arange(1., self.mu + 1,
-                                                       device=self.device).log()
+                                                       device=self.device,
+                                                    dtype=self.dtype).log()
         #     \-> weights are normalized by the sum
         self.weights = self.weights / sum(self.weights)
         self.weights_pop = log(self.lambda_ + 1) - torch.arange(
-            1., self.lambda_ + 1, device=self.device).log()
+            1., self.lambda_ + 1, device=self.device, dtype=self.dtype).log()
         self.weights_pop = self.weights_pop / sum(self.weights_pop)
         #  Variance effectiveness factor
         self.mueff = kwargs.get("mueff", sum(self.weights) ** 2 /
@@ -192,7 +193,7 @@ class DES(object):
         # nonLamarckian approach allows individuals to violate boundaries.
         # Fitness value is estimeted by fitness of repaired individual.
         self.lamarckism = kwargs.get("lamarckism", False)
-        self.worst_fitness = torch.finfo().max
+        self.worst_fitness = torch.finfo(self.dtype).max
 
         self.cpu = torch.device('cpu')
 
@@ -281,7 +282,7 @@ class DES(object):
                         ret.append(self._fitness_wrapper(x[:, i]))
                 else:
                     return self._fitness_wrapper(x)
-                return torch.tensor(ret, device=self.device)
+                return torch.tensor(ret, device=self.device, dtype=self.dtype)
             else:
                 ret = []
                 budget_left = self.budget - self.count_eval
@@ -289,7 +290,7 @@ class DES(object):
                     ret.append(self._fitness_wrapper(x[:, i]))
                 return torch.tensor(
                     ret + [self.worst_fitness]*(cols - budget_left),
-                    device=self.device)
+                    device=self.device, dtype=self.dtype)
         else:
             if self.count_eval < self.budget:
                 return self._fitness_wrapper(x)
@@ -321,25 +322,33 @@ class DES(object):
         self.worst_fit = None
 
         d_mean = torch.zeros((self.problem_size, self.hist_size),
-                             device=self.device)
-        ft_history = torch.zeros(self.hist_size, device=self.device)
+                             device=self.device, dtype=self.dtype)
+        ft_history = torch.zeros(self.hist_size, device=self.device, dtype=self.dtype)
         pc = torch.zeros((self.problem_size, self.hist_size),
-                         device=self.device)
+                         device=self.device, dtype=self.dtype)
 
         #delta = (self.upper - self.lower) * 0.1
         uniform = Uniform(self.lower * 0.9, self.upper * 0.9)
         # normal = Normal(torch.tensor([0.0]), torch.tensor([1.0]))
         # normal = Normal(self.initial_value, torch.tensor([0.2]))
-        sigma = 1.2
-        mvn = MultivariateNormal(self.initial_value, scale_tril=torch.diag(torch.tensor([sigma]).repeat(self.problem_size)))
+        sigma = 0.25
+        #  mvn = MultivariateNormal(self.initial_value, scale_tril=torch.diag(torch.tensor([sigma]).repeat(self.problem_size)))
         #normal = Normal(
         #    self.initial_value, torch.tensor([0.2], device=self.device))
 
         # XXX this thing doesn't work if we modify lambda on the fly
+        #  mean = self.initial_value.unsqueeze(1).repeat(1, self.lambda_).cpu()
+        #  sd = torch.tensor([sigma]).repeat(self.lambda_).cpu()
+        #  normal_covariance_matrix = (torch.eye(self.lambda_, device=self.device,
+                                              #  dtype=self.dtype) *
+        #  (self.upper[0] / 4.5)).cpu()
+        #  normal = MultivariateNormal(mean, normal_covariance_matrix)
+        #  normal = Normal(self.initial_value.cpu(), torch.tensor([sigma]).cpu())
         mean = self.initial_value.unsqueeze(1).repeat(1, self.lambda_).cpu()
-        normal_covariance_matrix = (torch.eye(self.lambda_, device=self.device) *
-        (self.upper[0] / 4.5)).cpu()
+        normal_covariance_matrix = (torch.eye(self.lambda_, device=self.device) * sigma).cpu()
         normal = MultivariateNormal(mean, normal_covariance_matrix)
+
+
 
         best_val_log = []
         while self.count_eval < self.budget:  # and self.iter_ < self.max_iter:
@@ -349,22 +358,24 @@ class DES(object):
 
             history = [None]*self.hist_size
             self.Ft = self.initFt
+            population = None
+            population_repaired = None
 
             gc.collect()
             torch.cuda.empty_cache()
             print(f"Before population: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
-            population = torch.empty((self.problem_size, self.lambda_),
-                                     device=self.device)
-            print(f"After population: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
-            population_repaired = torch.empty((self.problem_size,
-                                               self.lambda_),
-                                              device=self.device)
-            print(f"After population repaired: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
+            #  population = torch.empty((self.problem_size, self.lambda_),
+                                     #  device=self.device, dtype=self.dtype)
+            #  print(f"After population: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
+            #  population_repaired = torch.empty((self.problem_size,
+                                               #  self.lambda_),
+                                              #  device=self.device, dtype=self.dtype)
+            #  print(f"After population repaired: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
             cum_mean = (self.upper + self.lower) / 2
 
             if self.nn_train:
-                #population = normal.sample().to(self.device)
-                population = mvn.sample().to(self.device)
+                population = normal.sample().to(self.device)
+                #  population = mvn.sample().to(self.device)
                 #  population = normal.sample((self.lambda_,)).t().to(self.device)
                 population[:, 0] = self.initial_value
             else:
@@ -374,7 +385,7 @@ class DES(object):
             if self.lamarckism:
                 population = population_repaired
 
-            selection = torch.zeros(self.mu, device=self.device)
+            #  selection = torch.zeros(self.mu, device=self.device, dtype=self.dtype)
             #  selected_points = torch.zeros((self.problem_size, self.mu),
                                           #  device=self.device)
             fitness = self._fitness_lamarckian(population)
@@ -391,7 +402,7 @@ class DES(object):
 
             # Matrices for creating diffs
             diffs = torch.zeros((self.problem_size, self.lambda_),
-                                device=self.device)
+                                device=self.device, dtype=self.dtype)
             x1_sample = self.lambda_
             x2_sample = self.lambda_
 
@@ -403,7 +414,7 @@ class DES(object):
             while self.count_eval < self.budget and not stoptol:  # and self.iter_ < self.max_iter:
                 torch.cuda.empty_cache()
                 gc.collect()
-                #  print(f"In loop: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
+                print(f"In loop: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
                 self.iter_ += 1
                 hist_head = (hist_head + 1) % self.hist_size
 
@@ -418,7 +429,7 @@ class DES(object):
                     #  pop_log[:, :, self.iter_] = population
                 if self.log_best_val:
                     best_val_log.append(self.best_fit)
-                    np.save(f'log_best_val_{self.log_id}.npy', np.array(best_val_log))
+                    #  np.save(f'log_best_val_{self.log_id}.npy', np.array(best_val_log))
                 #  if self.log_worst_val:
                     #  if len(worst_val_log) > 0:
                         #  worst_val_log.append(max(max(worst_val_log), max(fitness)))
@@ -455,7 +466,7 @@ class DES(object):
                     pc[:, hist_head] = (1 - self.cp) * pc[:, hist_head - 1] + \
                         sqrt(self.mu * self.cp * (2 - self.cp)) * step
 
-                print(f"|step|={sum(step**2)}")
+                #  print(f"|step|={sum(step**2)}")
                 # Sample from history with uniform distribution
                 limit = hist_head + 1 if self.iter_ <= self.hist_size else self.hist_size
                 history_sample1 = torch.randint(0, limit, (self.lambda_,),
@@ -475,15 +486,17 @@ class DES(object):
                         .to(self.device)
 
                     diffs[:, i] = \
-                        sqrt(self.cc) * ((x1 - x2) + torch.randn(1, device=self.device) * d_mean[:, history_sample1[i]]) + \
-                        sqrt(1 - self.cc) * torch.randn(1, device=self.device) * pc[:, history_sample2[i]]
+                        sqrt(self.cc) * ((x1 - x2) + torch.randn(1, device=self.device,
+                                                                 dtype=self.dtype) * d_mean[:, history_sample1[i]]) + \
+                        sqrt(1 - self.cc) * torch.randn(1, device=self.device,
+                                                        dtype=self.dtype) * pc[:, history_sample2[i]]
 
                 # New population
                 population = (
                     new_mean.unsqueeze(1) + self.Ft * diffs +
                     self.tol *
                     (1 - 2 / (self.problem_size**2)) ** (self.iter_ / 2) *
-                    torch.randn(diffs.shape, device=self.device) / chi_N)
+                    torch.randn(diffs.shape, device=self.device, dtype=self.dtype) / chi_N)
                 population = self.delete_infs_nans(population)
 
                 # Check constraints violations
@@ -536,14 +549,14 @@ class DES(object):
                     self.best_par = cum_mean_repaired
 
                 if fitness[0] <= self.stopfitness:
-                    print("Stop fitness reached.")
+                    #  print("Stop fitness reached.")
                     break
 
                 if abs(fitness.max() - fitness.min()) < self.tol and \
                         self.count_eval < 0.8 * self.budget:
                     stoptol = True
                 print(f"iter={self.iter_} ,best={self.best_fit}")
-        #  log_ = {}
+        log_ = {}
         #  if self.log_Ft:
             #  log_["Ft"] = Ft_log
         #  if self.log_value:
@@ -552,9 +565,9 @@ class DES(object):
             #  #  log_["mean"] = mean_log
         #  if self.log_pop:
             #  log_["pop"] = pop_log
-        #  if self.log_best_val:
-            #  log_["best_val"] = best_val_log
+        if self.log_best_val:
+            log_["best_val"] = best_val_log
         #  if self.log_worst_val:
             #  log_["worst_val"] = worst_val_log
 
-        return self.best_par
+        return self.best_par #, log_
