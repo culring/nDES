@@ -17,7 +17,7 @@ torch.manual_seed(1235)
 hl = 10
 lr = 0.01
 #  num_epoch = 25000
-num_epoch = 300000
+num_epoch = 600000
 DES_TRAINING = True
 #DEVICE = torch.device("cpu")
 DEVICE = torch.device("cuda")
@@ -26,9 +26,9 @@ DEVICE = torch.device("cuda")
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 20, 5)
-        self.conv2 = nn.Conv2d(20, 32, 5)
-        self.fc1 = nn.Linear(4*4*32, 64)
+        self.conv1 = nn.Conv2d(3, 20, 5)
+        self.conv2 = nn.Conv2d(20, 20, 5)
+        self.fc1 = nn.Linear(5*5*20, 64)
         self.fc2 = nn.Linear(64, 10)
 
     def forward(self, x):
@@ -38,7 +38,7 @@ class Net(nn.Module):
         #  x = F.leaky_relu(self.conv2(x), 0.1)
         x = torch.tanh(self.conv2(x))
         x = F.max_pool2d(x, 2, 2)
-        x = x.view(-1, 4*4*32)
+        x = x.view(-1, 5*5*20)
         #  x = F.leaky_relu(self.fc1(x), 0.1)
         x = torch.tanh(self.fc1(x))
         x = self.fc2(x)
@@ -119,27 +119,28 @@ def test(model, device, test_loader):
 
 
 if __name__ == "__main__":
-    mean = (125.30691805, 122.95039414, 113.86538318)
-    std = (62.99321928, 62.08870764, 66.70489964)
-    train_dataset = datasets.MNIST(
+    mean = (0.4914, 0.4822, 0.4465)
+    std = (0.2023, 0.1994, 0.2010)
+
+    train_dataset = datasets.CIFAR10(
         '../data', train=True, download=True,
         transform=transforms.Compose([
            transforms.ToTensor(),
-           transforms.Normalize((0.1307,), (0.3081,))
+           transforms.Normalize(mean, std)
        ])
     )
-    test_dataset = datasets.MNIST(
+    test_dataset = datasets.CIFAR10(
         '../data', train=False, transform=transforms.Compose([
            transforms.ToTensor(),
-           transforms.Normalize((0.1307,), (0.3081,))
+           transforms.Normalize(mean, std)
         ])
     )
-
 # build model
     model = Net().to(DEVICE)
+    #  model.load_state_dict(torch.load('model_cifar.pth.tar')['state_dict'])
     #  for layer in model.parameters():
         #  torch.nn.init.zeros_(layer)
-    # model = bootstrap(model, DEVICE, num_batches=200)
+    #  model = bootstrap(model, DEVICE, num_batches=200)
     print(f"Num params: {sum([param.nelement() for param in model.parameters()])}")
     #  print(model.conv1.weight)
 
@@ -163,14 +164,14 @@ if __name__ == "__main__":
         y_train = y_train[:1000]
         test_loader = torch.utils.data.DataLoader(
             test_dataset, batch_size=1000, shuffle=True)
-        des_optim = DESOptimizer(model, criterion, x_train, y_train, restarts=3,
+        des_optim = DESOptimizer(model, criterion, x_train, y_train, restarts=6,
                                  lower=-2., upper=2., budget=num_epoch, tol=1e-6,
                                  nn_train=True, lambda_=4000, history=16,
                                  log_best_val=False, device=DEVICE)
         model = des_optim.run(lambda x: test(x, DEVICE, test_loader))
         test(model, DEVICE, test_loader)
         # torch.save(model, 'model.pt')
-        torch.save({'state_dict': model.state_dict()}, 'model.pth.tar')
+        torch.save({'state_dict': model.state_dict()}, 'model_cifar.pth.tar')
     else:
         model.train()
         train_loader = torch.utils.data.DataLoader(

@@ -9,40 +9,46 @@ from torch.autograd import Variable
 from torchvision import datasets, transforms
 
 from des_torch import DESOptimizer
+import random
 
 # load
-torch.manual_seed(1235)
+def seed_everything():
+    torch.manual_seed(1235)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    random.seed(42)
+    np.random.seed(42)
 
 # hyperparameters
 hl = 10
 lr = 0.01
-#  num_epoch = 25000
-num_epoch = 300000
+num_epoch = 100000
 DES_TRAINING = True
 #DEVICE = torch.device("cpu")
 DEVICE = torch.device("cuda")
 
 
 class Net(nn.Module):
-    def __init__(self):
+    def __init__(self, act):
         super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 20, 5)
-        self.conv2 = nn.Conv2d(20, 32, 5)
-        self.fc1 = nn.Linear(4*4*32, 64)
-        self.fc2 = nn.Linear(64, 10)
+        self.fc1 = nn.Linear(28*28, 5)
+        self.fc2 = nn.Linear(5, 10)
+        self.activation = act
 
     def forward(self, x):
-        #  x = F.leaky_relu(self.conv1(x), 0.1)
-        x = torch.tanh(self.conv1(x))
-        x = F.max_pool2d(x, 2, 2)
-        #  x = F.leaky_relu(self.conv2(x), 0.1)
-        x = torch.tanh(self.conv2(x))
-        x = F.max_pool2d(x, 2, 2)
-        x = x.view(-1, 4*4*32)
+        x = x.view(-1, 28*28)
+        x = self.fc1(x)
+        x = self.activation(x)
         #  x = F.leaky_relu(self.fc1(x), 0.1)
-        x = torch.tanh(self.fc1(x))
+        #  x = torch.tanh(self.fc1(x) / 5)
+        #  x = torch.exp(-self.fc1(x)**2 / 2)
+        #  x = (self.fc1(x) >= 0.0).float()
+        #  x = F.relu(self.fc1(x))
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
+        #  x = x.view(-1, 28*28)
+        #  x = self.fc1(x)
+        #  return F.log_softmax(x, dim=1)
 
 # class Net(nn.Module):
 #
@@ -74,31 +80,6 @@ def train(model, device, train_loader, optimizer, epoch):
                 100. * batch_idx / len(train_loader), loss.item()))
 
 
-def bootstrap(model, device, num_batches=10):
-    train_dataset = datasets.MNIST(
-        '../data', train=True, download=True,
-        transform=transforms.Compose([
-           transforms.ToTensor(),
-           transforms.Normalize((0.1307,), (0.3081,))
-       ])
-    )
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=64, shuffle=True)
-    model.train()
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-    for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = data.to(device), target.to(device)
-        optimizer.zero_grad()
-        output = model(data)
-        loss = criterion(output, target)
-        loss.backward()
-        optimizer.step()
-        if batch_idx >= num_batches:
-            print('Loss after bootstrap: {:.6f}'.format(loss.item()))
-            return model
-
-
 def test(model, device, test_loader):
     model.eval()
     test_loss = 0
@@ -116,11 +97,10 @@ def test(model, device, test_loader):
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
         test_loss, correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)))
+    return test_loss, correct
 
 
-if __name__ == "__main__":
-    mean = (125.30691805, 122.95039414, 113.86538318)
-    std = (62.99321928, 62.08870764, 66.70489964)
+def mnist_run(activation):
     train_dataset = datasets.MNIST(
         '../data', train=True, download=True,
         transform=transforms.Compose([
@@ -134,12 +114,15 @@ if __name__ == "__main__":
            transforms.Normalize((0.1307,), (0.3081,))
         ])
     )
-
+    seed_everything()
 # build model
-    model = Net().to(DEVICE)
-    #  for layer in model.parameters():
-        #  torch.nn.init.zeros_(layer)
-    # model = bootstrap(model, DEVICE, num_batches=200)
+    model = Net(activation).to(DEVICE)
+    for layer in model.parameters():
+        torch.nn.init.zeros_(layer)
+    #  torch.nn.init.zeros_(model.fc1.weight)
+    #  torch.nn.init.zeros_(model.fc1.bias)
+    #  torch.nn.init.ones_(model.fc2.weight)
+    #  torch.nn.init.ones_(model.fc2.bias)
     print(f"Num params: {sum([param.nelement() for param in model.parameters()])}")
     #  print(model.conv1.weight)
 
@@ -159,18 +142,16 @@ if __name__ == "__main__":
             x_train, y_train = x.to(DEVICE), y.to(DEVICE)
             #  print(f"After dataset: {torch.cuda.memory_allocated(DEVICE) / (1024**3)}")
 
-        x_train = x_train[:1000, :]
-        y_train = y_train[:1000]
+        des_optim = DESOptimizer(model, criterion, x_train, y_train, restarts=2,
+                                 lower=-2., upper=2., budget=num_epoch, tol=1e-6,
+                                 nn_train=True, lambda_=8000, history=16,
+                                 log_best_val=False, device=DEVICE)
+        model = des_optim.run()
         test_loader = torch.utils.data.DataLoader(
             test_dataset, batch_size=1000, shuffle=True)
-        des_optim = DESOptimizer(model, criterion, x_train, y_train, restarts=3,
-                                 lower=-2., upper=2., budget=num_epoch, tol=1e-6,
-                                 nn_train=True, lambda_=4000, history=16,
-                                 log_best_val=False, device=DEVICE)
-        model = des_optim.run(lambda x: test(x, DEVICE, test_loader))
-        test(model, DEVICE, test_loader)
+        return test(des_optim.model, DEVICE, test_loader)
         # torch.save(model, 'model.pt')
-        torch.save({'state_dict': model.state_dict()}, 'model.pth.tar')
+        #  torch.save({'state_dict': model.state_dict()}, 'model.pth.tar')
     else:
         model.train()
         train_loader = torch.utils.data.DataLoader(
@@ -181,3 +162,24 @@ if __name__ == "__main__":
         for epoch in range(1, num_epoch + 1):
             train(model, DEVICE, train_loader, optimizer, epoch)
             test(model, DEVICE, test_loader)
+
+
+if __name__ == "__main__":
+    activations = {
+        'relu': F.relu,
+        'tanh': torch.tanh,
+        '5 * tanh(x/5)': lambda x: 5 * torch.tanh(x / 5),
+        'tanh(x/5)': lambda x: torch.tanh(x / 5),
+        '5 * tanh': lambda x: 5 * torch.tanh(x),
+        'sigmoid': torch.sigmoid,
+        'softplus': F.softplus,
+        'softsign': F.softsign,
+        'gauss': lambda x: torch.exp(-x**2 / 2),
+        'binary step': lambda x: (x >= 0.).float(),
+    }
+    results = {}
+    for name, act in activations.items():
+        res = mnist_run(act)
+        results[name] = res
+    for name, (loss, correct) in results.items():
+        print(f"{name}: Loss: {loss:.4f} Accuracy: {correct / 1e2:.2f}%")
