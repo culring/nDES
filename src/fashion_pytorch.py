@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data import TensorDataset
 from torchvision import datasets, transforms
 from sklearn.model_selection import train_test_split
 import numpy as np
@@ -15,7 +16,7 @@ DES_TRAINING = True
 DEVICE = torch.device("cuda:0")
 BOOTSTRAP_BATCHES = None
 MODEL_NAME = "fashion_des.pth.tar"
-LOAD_WEIGHTS = False
+LOAD_WEIGHTS = True
 SEED_OFFSET = 0
 BATCH_SIZE = 1000
 STRATIFY = True
@@ -74,24 +75,25 @@ if __name__ == "__main__":
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters())
 
-    if DES_TRAINING:
-        for x, y in torch.utils.data.DataLoader(
-            train_dataset, batch_size=len(train_dataset), shuffle=True
-        ):
-            #  print(f"Before dataset: {torch.cuda.memory_allocated(DEVICE) / (1024**3)}")
-            x_train, y_train = x.to(DEVICE), y.to(DEVICE)
-            #  print(f"After dataset: {torch.cuda.memory_allocated(DEVICE) / (1024**3)}")
+    for x, y in torch.utils.data.DataLoader(
+        train_dataset, batch_size=len(train_dataset), shuffle=True
+    ):
+        #  print(f"Before dataset: {torch.cuda.memory_allocated(DEVICE) / (1024**3)}")
+        x_train, y_train = x.to(DEVICE), y.to(DEVICE)
+        #  print(f"After dataset: {torch.cuda.memory_allocated(DEVICE) / (1024**3)}")
 
-        if BATCH_SIZE is not None:
-            if STRATIFY:
-                _, splitter = train_test_split(np.arange(0, len(train_dataset)),
-                                               test_size=BATCH_SIZE/len(train_dataset),
-                                               stratify=y_train.cpu().numpy())
-                x_train = x_train[splitter, :]
-                y_train = y_train[splitter]
-            else:
-                x_train = x_train[:BATCH_SIZE, :]
-                y_train = y_train[:BATCH_SIZE]
+    if BATCH_SIZE is not None:
+        if STRATIFY:
+            _, splitter = train_test_split(np.arange(0, len(train_dataset)),
+                                           test_size=BATCH_SIZE/len(train_dataset),
+                                           stratify=y_train.cpu().numpy())
+            x_train = x_train[splitter, :]
+            y_train = y_train[splitter]
+        else:
+            x_train = x_train[:BATCH_SIZE, :]
+            y_train = y_train[:BATCH_SIZE]
+
+    if DES_TRAINING:
         print(y_train.unique(return_counts=True))
         des_optim = DESOptimizer(
             model,
@@ -104,13 +106,17 @@ if __name__ == "__main__":
             budget=EPOCHS,
             tol=1e-6,
             nn_train=True,
-            lambda_=4000,
+            lambda_=6000,
             history=16,
             log_best_val=False,
             device=DEVICE,
         )
-        train_via_des(model, des_optim, DEVICE, test_dataset, MODEL_NAME)
+        train_via_des(model, des_optim, DEVICE, test_dataset, 'des_' + MODEL_NAME)
     else:
+        #  train_via_gradient(
+            #  model, criterion, optimizer, train_dataset, test_dataset, EPOCHS, DEVICE
+        #  )
+        train_dataset = TensorDataset(x_train, y_train)
         train_via_gradient(
             model, criterion, optimizer, train_dataset, test_dataset, EPOCHS, DEVICE
         )

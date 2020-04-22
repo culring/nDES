@@ -177,13 +177,13 @@ class DES(object):
                                                        device=self.device,
                                                     dtype=self.dtype).log()
         #     \-> weights are normalized by the sum
-        self.weights = self.weights / sum(self.weights)
+        self.weights = self.weights / self.weights.sum()
         self.weights_pop = log(self.lambda_ + 1) - torch.arange(
             1., self.lambda_ + 1, device=self.device, dtype=self.dtype).log()
-        self.weights_pop = self.weights_pop / sum(self.weights_pop)
+        self.weights_pop = self.weights_pop / self.weights_pop.sum()
         #  Variance effectiveness factor
-        self.mueff = kwargs.get("mueff", sum(self.weights) ** 2 /
-                                sum(self.weights ** 2))
+        self.mueff = kwargs.get("mueff", self.weights.sum() ** 2 /
+                                (self.weights ** 2).sum())
         #  Evolution Path decay factor
         self.cc = kwargs.get("ccum", self.mu / (self.mu + 2))
         #  Size of evolution path
@@ -335,7 +335,7 @@ class DES(object):
         p_fit = fitness
 
         repaired_ind = (x != x_repaired).all(dim=0)
-        vec_dist = sum((x - x_repaired) ** 2)
+        vec_dist = ((x - x_repaired) ** 2).sum(dim=0)
 
         p_fit[repaired_ind] = self.worst_fit + vec_dist[repaired_ind]
         #  p_fit = self.delete_infs_nans(p_fit)
@@ -400,7 +400,7 @@ class DES(object):
 
             gc.collect()
             torch.cuda.empty_cache()
-            print(f"Before population: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
+            #  print(f"Before population: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
             #  population = torch.empty((self.problem_size, self.lambda_),
                                      #  device=self.device, dtype=self.dtype)
             #  print(f"After population: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
@@ -464,8 +464,8 @@ class DES(object):
 
                 torch.cuda.empty_cache()
                 gc.collect()
-                print(f"In loop: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
-                print(f"{self.count_eval} / {self.budget} ({self.count_eval * 100 / self.budget})")
+                #  print(f"In loop: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
+                #  print(f"{self.count_eval} / {self.budget} ({self.count_eval * 100 / self.budget})")
                 self.iter_ += 1
                 hist_head = (hist_head + 1) % self.hist_size
 
@@ -517,7 +517,8 @@ class DES(object):
                     pc[:, hist_head] = (1 - self.cp) * pc[:, hist_head - 1] + \
                         sqrt(self.mu * self.cp * (2 - self.cp)) * step
 
-                #  print(f"|step|={sum(step**2)}")
+                print(f"|step|={sum(step**2)}")
+                print(f"|pc|={(pc**2).sum()}")
                 # Sample from history with uniform distribution
                 limit = hist_head + 1 if self.iter_ <= self.hist_size else self.hist_size
                 history_sample1 = torch.randint(0, limit, (self.lambda_,),
@@ -546,7 +547,7 @@ class DES(object):
                 population = (
                     new_mean.unsqueeze(1) + self.Ft * diffs +
                     self.tol *
-                    (1 - 2 / (self.problem_size**2)) ** (self.iter_ / 2) *
+                    (1 - 2 / (self.problem_size)) ** (self.iter_ / 2) *
                     torch.randn(diffs.shape, device=self.device, dtype=self.dtype) / chi_N)
                 #  population = self.delete_infs_nans(population)
                 self.delete_infs_nans(population)
@@ -565,7 +566,7 @@ class DES(object):
 
                 gc.collect()
                 torch.cuda.empty_cache()
-                print(f"Before fitness: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
+                #  print(f"Before fitness: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
                 # Evaluation
                 start = timer()
                 fitness = self._fitness_lamarckian(population)
@@ -601,7 +602,7 @@ class DES(object):
                     cum_mean, self.lower, self.upper)
 
                 fn_cum = self._fitness_lamarckian(cum_mean_repaired)
-                #  print(f"fn_cum: {fn_cum}")
+                print(f"fn_cum: {fn_cum}")
                 if fn_cum < self.best_fit:
                     self.best_fit = fn_cum
                     self.best_par = cum_mean_repaired

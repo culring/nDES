@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import datasets, transforms
+from sklearn.model_selection import train_test_split
+import numpy as np
 
 from des_torch import DESOptimizer
 from utils import bootstrap, train_via_des, train_via_gradient, seed_everything
@@ -81,9 +83,14 @@ if __name__ == "__main__":
             #  print(f"After dataset: {torch.cuda.memory_allocated(DEVICE) / (1024**3)}")
 
         if BATCH_SIZE is not None:
+            #  _, splitter = train_test_split(np.arange(0, len(train_dataset)),
+                                           #  test_size=BATCH_SIZE/len(train_dataset),
+                                           #  stratify=y_train.cpu().numpy())
+            #  x_train = x_train[splitter, :]
+            #  y_train = y_train[splitter]
             x_train = x_train[:BATCH_SIZE, :]
             y_train = y_train[:BATCH_SIZE]
-
+        print(y_train.unique(return_counts=True))
         des_optim = DESOptimizer(
             model,
             criterion,
