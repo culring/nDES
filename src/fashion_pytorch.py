@@ -10,13 +10,13 @@ from des_torch import DESOptimizer
 from utils import bootstrap, train_via_des, train_via_gradient, seed_everything
 
 #  EPOCHS = 25000
-EPOCHS = 600000
+EPOCHS = 4 * 1200000
 DES_TRAINING = True
 #  DEVICE = torch.device("cpu")
 DEVICE = torch.device("cuda:0")
 BOOTSTRAP_BATCHES = None
 MODEL_NAME = "fashion_des.pth.tar"
-LOAD_WEIGHTS = True
+LOAD_WEIGHTS = False
 SEED_OFFSET = 0
 BATCH_SIZE = 1000
 STRATIFY = True
@@ -100,13 +100,13 @@ if __name__ == "__main__":
             criterion,
             x_train,
             y_train,
-            restarts=6,
+            restarts=None,
             lower=-2.0,
             upper=2.0,
             budget=EPOCHS,
             tol=1e-6,
             nn_train=True,
-            lambda_=6000,
+            lambda_=4000,
             history=16,
             log_best_val=False,
             device=DEVICE,
