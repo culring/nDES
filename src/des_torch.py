@@ -3,6 +3,7 @@ from math import floor, log, sqrt
 from random import sample
 
 import numpy as np
+import pandas as pd
 import torch
 from torch.distributions import MultivariateNormal, Uniform
 
@@ -14,7 +15,7 @@ class DESOptimizer(object):
 
     """Interface for the DES optimizer for the neural networks optimization."""
 
-    def __init__(self, model, criterion, X, Y, restarts=None, **kwargs):
+    def __init__(self, model, criterion, X, Y, restarts=None, test_func=None, **kwargs):
         """TODO: to be defined1.
 
         Args:
@@ -91,6 +92,7 @@ class DESOptimizer(object):
         Returns:
             Optimized model.
         """
+        self.test_func = test_func
         with torch.no_grad():
             for param in self.model.parameters():
                 param.requires_grad = False
@@ -102,25 +104,29 @@ class DESOptimizer(object):
                         **self.kwargs)
                     self.best_value = des.run()
                     del des
-                    if test_func is not None:
-                        end = timer()
-                        model = self.model
-                        for param, layer in zip(model.parameters(),
-                                                self.unzip_layers(self.best_value)):
-                            param.data = layer
-                        print(f"\nPerf after {seconds_to_human_readable(end - self.start)}")
-                        test_func(model)
+                    if self.test_func is not None:
+                        self.test_model(self.best_value)
                     gc.collect()
                     torch.cuda.empty_cache()
             else:
                 des = DES(
                     self.best_value, self._objective_function,
-                    xavier_coeffs=self.xavier_coeffs, **self.kwargs)
+                    xavier_coeffs=self.xavier_coeffs, test_func=self.test_model,
+                    **self.kwargs)
                 self.best_value = des.run()
             for param, layer in zip(self.model.parameters(),
                                     self.unzip_layers(self.best_value)):
                 param.data = layer
             return self.model
+
+    def test_model(self, weights):
+        end = timer()
+        model = self.model
+        for param, layer in zip(model.parameters(),
+                                self.unzip_layers(weights)):
+            param.data = layer
+        print(f"\nPerf after {seconds_to_human_readable(end - self.start)}")
+        return self.test_func(model)
 
 
 class DES(object):
@@ -208,22 +214,14 @@ class DES(object):
         self.count_eval = 0
         self.sqrt_N = sqrt(self.problem_size)
 
-        self.log_all = kwargs.get("log_all", False)
-        self.log_Ft = kwargs.get("log_Ft", self.log_all)
-        self.log_value = kwargs.get("log_value", self.log_all)
-        #  self.log_mean = kwargs.get("log_mean", self.log_all)
-        self.log_pop = kwargs.get("log_pop", self.log_all)
-        self.log_best_val = kwargs.get("log_best_val", self.log_all)
-        self.log_worst_val = kwargs.get("log_worst_val", self.log_all)
-        self.log_id = kwargs.get("log_id", 0)
-        #  self.log_eigen = kwargs.get("log_eigen", self.log_all)
-
         # nonLamarckian approach allows individuals to violate boundaries.
         # Fitness value is estimeted by fitness of repaired individual.
         self.lamarckism = kwargs.get("lamarckism", False)
         self.worst_fitness = torch.finfo(self.dtype).max
 
         self.cpu = torch.device('cpu')
+        self.start = timer()
+        self.test_func = kwargs.get('test_func', None)
 
     def bounce_back_boundary_1d(self, x, lower, upper):
         """TODO
@@ -318,6 +316,8 @@ class DES(object):
                 budget_left = self.budget - self.count_eval
                 for i in range(budget_left):
                     ret.append(self._fitness_wrapper(x[:, i]))
+                if not ret and cols == 1:
+                    return self.worst_fitness
                 return torch.tensor(
                     ret + [self.worst_fitness]*(cols - budget_left),
                     device=self.device, dtype=self.dtype)
@@ -386,7 +386,8 @@ class DES(object):
 
 
 
-        best_val_log = []
+        log = pd.DataFrame(columns=['step', 'pc', 'mean_fitness', 'best_fitness',
+                                    'fn_cum', 'best_found', 'iter'])
         evaluation_times = []
         while self.count_eval < self.budget:  # and self.iter_ < self.max_iter:
 
@@ -462,32 +463,13 @@ class DES(object):
 
             while self.count_eval < self.budget and not stoptol:  # and self.iter_ < self.max_iter:
 
+                iter_log = {}
                 torch.cuda.empty_cache()
                 gc.collect()
                 #  print(f"In loop: {torch.cuda.memory_allocated(self.device) / (1024**3)}")
                 #  print(f"{self.count_eval} / {self.budget} ({self.count_eval * 100 / self.budget})")
                 self.iter_ += 1
                 hist_head = (hist_head + 1) % self.hist_size
-
-                #  if self.log_Ft:
-                    #  Ft_log.append(self.Ft)
-                #  if self.log_value:
-                    #  value_log = np.vstack((value_log, fitness))
-                #  if self.log_mean:
-                    #  mean_log.append(self._fitness_lamarckian(
-                        #  self.bounce_back_boundary(new_mean)))
-                #  if self.log_pop:
-                    #  pop_log[:, :, self.iter_] = population
-                if self.log_best_val:
-                    best_val_log.append(self.best_fit)
-                    #  np.save(f'log_best_val_{self.log_id}.npy', np.array(best_val_log))
-                #  if self.log_worst_val:
-                    #  if len(worst_val_log) > 0:
-                        #  worst_val_log.append(max(max(worst_val_log), max(fitness)))
-                    #  else:
-                        #  worst_val_log.append(max(fitness))
-                #  if self.log_eigen:
-                    #  eigen_log = np.zeros((0, self.problem_size))
 
                 # Select best 'mu' individuals of population
                 selection = torch.argsort(fitness)[:self.mu]
@@ -519,6 +501,8 @@ class DES(object):
 
                 print(f"|step|={sum(step**2)}")
                 print(f"|pc|={(pc**2).sum()}")
+                iter_log['step'] = sum(step**2).item()
+                iter_log['pc'] = (pc**2).sum().item()
                 # Sample from history with uniform distribution
                 limit = hist_head + 1 if self.iter_ <= self.hist_size else self.hist_size
                 history_sample1 = torch.randint(0, limit, (self.lambda_,),
@@ -580,8 +564,12 @@ class DES(object):
                 # XXX doesn't break
                 wb = fitness.argmin()
                 print(f"best fitness: {fitness[wb]}")
+                print(f"mean fitness: {fitness.clamp(0, 2.5).mean()}")
+                iter_log['best_fitness'] = fitness[wb].item()
+                iter_log['mean_fitness'] = fitness.clamp(0, 2.5).mean().item()
+                iter_log['iter'] = self.iter_
                 if fitness[wb] < self.best_fit:
-                    self.best_fit = fitness[wb]
+                    self.best_fit = fitness[wb].item()
                     if not self.lamarckism:
                         self.best_par = population_repaired[:, wb]
                     else:
@@ -603,6 +591,7 @@ class DES(object):
 
                 fn_cum = self._fitness_lamarckian(cum_mean_repaired)
                 print(f"fn_cum: {fn_cum}")
+                iter_log['fn_cum'] = fn_cum
                 if fn_cum < self.best_fit:
                     self.best_fit = fn_cum
                     self.best_par = cum_mean_repaired
@@ -615,19 +604,16 @@ class DES(object):
                         self.count_eval < 0.8 * self.budget:
                     stoptol = True
                 print(f"iter={self.iter_} ,best={self.best_fit}")
-        log_ = {}
-        #  if self.log_Ft:
-            #  log_["Ft"] = Ft_log
-        #  if self.log_value:
-            #  log_["value"] = value_log
-        #  #  if self.log_mean:
-            #  #  log_["mean"] = mean_log
-        #  if self.log_pop:
-            #  log_["pop"] = pop_log
-        if self.log_best_val:
-            log_["best_val"] = best_val_log
-        #  if self.log_worst_val:
-            #  log_["worst_val"] = worst_val_log
+                iter_log['best_found'] = self.best_fit
+                if self.iter_ % 50 == 0 and self.test_func is not None:
+                    test_loss, test_acc = self.test_func(self.best_par)
+                else:
+                    test_loss, test_acc = None, None
+                iter_log['test_loss'] = test_loss
+                iter_log['test_acc'] = test_acc
+                log = log.append(iter_log, ignore_index=True)
+                if self.iter_ % 50 == 0:
+                    log.to_csv(f'des_log_{self.start}.csv')
 
         #  np.save(f"times_{self.problem_size}.npy", np.array(evaluation_times))
         return self.best_par #, log_

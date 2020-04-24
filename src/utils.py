@@ -100,6 +100,7 @@ def test(model, device, test_loader):
             100.0 * correct / len(test_loader.dataset),
         )
     )
+    return test_loss, 100.0 * correct / len(test_loader.dataset),
 
 
 def train_via_des(model, des, device, test_dataset, model_name):
