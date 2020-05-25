@@ -51,29 +51,24 @@ def train(model, device, train_loader, optimizer, epoch):
             )
 
 
-def bootstrap(model, device, num_batches=10):
-    train_dataset = datasets.MNIST(
-        "../data",
-        train=True,
-        download=True,
-        transform=transforms.Compose(
-            [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-        ),
-    )
+def bootstrap(model, train_dataset, device, num_batches=10):
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=64, shuffle=True
     )
     model.train()
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-    for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = data.to(device), target.to(device)
-        optimizer.zero_grad()
-        output = model(data)
-        loss = criterion(output, target)
-        loss.backward()
-        optimizer.step()
-        if batch_idx >= num_batches:
+    optimizer = torch.optim.Adam(model.parameters())
+    cnt = 0
+    while True:
+        cnt += 1
+        for batch_idx, (data, target) in enumerate(train_loader):
+            data, target = data.to(device), target.to(device)
+            optimizer.zero_grad()
+            output = model(data)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+        if cnt >= num_batches:
             print("Loss after bootstrap: {:.6f}".format(loss.item()))
             return model
 
