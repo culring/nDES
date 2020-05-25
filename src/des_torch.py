@@ -15,7 +15,9 @@ class DESOptimizer(object):
 
     """Interface for the DES optimizer for the neural networks optimization."""
 
-    def __init__(self, model, criterion, X, Y, restarts=None, test_func=None, **kwargs):
+    def __init__(self, model, criterion, X, Y, ewma_alpha, num_batches,
+                 x_val, y_val,
+                 restarts=None, test_func=None, **kwargs):
         """TODO: to be defined1.
 
         Args:
@@ -30,14 +32,28 @@ class DESOptimizer(object):
         self.best_value = None
         self.model = model
         self.criterion = criterion
-        self.X = X
-        self.Y = Y
+        #  self.X = X
+        #  self.Y = Y
+        self.data_gen = X
+        self.x_val = x_val
+        self.y_val = y_val
         self.kwargs = kwargs
         self.restarts = restarts
         self.start = timer()
         if restarts is not None and self.kwargs.get('budget') is not None:
             self.kwargs['budget'] //= restarts
+        #  self.ewma_alpha = ewma_alpha
+        self.ewma_alpha = 1
+        self.iter_counter = 1
+        self.ewma = torch.zeros(num_batches)
+        self.num_batches = num_batches
+        # sum of losses per batch for the current iteration
+        self.current_losses = torch.zeros(num_batches)
+        # count of evaluations per batch for the current iteration
+        self.current_counts = torch.zeros(num_batches)
         self.zip_layers(model.parameters())
+        self.initialize_ewma()
+        self.kwargs['iter_callback'] = self.iter_callback
 
     def zip_layers(self, layers_iter):
         """Concatenate flattened layers into a single 1-D tensor.
@@ -65,6 +81,15 @@ class DESOptimizer(object):
         self.best_value = torch.cat(tensors, 0)
         self.xavier_coeffs = torch.tensor(xavier_coeffs)
 
+    def initialize_ewma(self):
+        # XXX this is really ugly
+        for batch_idx, (b_x, y) in self.data_gen:
+            out = self.model(b_x)
+            loss = self.criterion(out, y).item()
+            self.ewma[batch_idx] = loss
+            if batch_idx >= self.num_batches - 1:
+                break
+
     def unzip_layers(self, zipped_layers):
         """Iterator over 'unzipped' layers, with their proper shapes.
 
@@ -83,8 +108,12 @@ class DESOptimizer(object):
         for param, layer in zip(self.model.parameters(),
                                 self.unzip_layers(weights)):
             param.data = layer
-        out = self.model(self.X)
-        return self.criterion(out, self.Y).item()
+        batch_idx, (b_x, y) = next(self.data_gen)
+        out = self.model(b_x)
+        loss = self.criterion(out, y).item()
+        self.current_losses[batch_idx] += loss
+        self.current_counts[batch_idx] += 1
+        return loss - self.ewma[batch_idx]
 
     def run(self, test_func=None):
         """Optimize model's weights wrt. the given criterion.
@@ -111,7 +140,7 @@ class DESOptimizer(object):
             else:
                 des = DES(
                     self.best_value, self._objective_function,
-                    xavier_coeffs=self.xavier_coeffs, test_func=self.test_model,
+                    xavier_coeffs=self.xavier_coeffs, test_func=self.validate_and_test,
                     **self.kwargs)
                 self.best_value = des.run()
             for param, layer in zip(self.model.parameters(),
@@ -127,6 +156,36 @@ class DESOptimizer(object):
             param.data = layer
         print(f"\nPerf after {seconds_to_human_readable(end - self.start)}")
         return self.test_func(model)
+
+    def iter_callback(self):
+        self.ewma *= (1 - self.ewma_alpha)
+        # calculate normal average for each batch and include it in the EWMA
+        self.ewma += self.ewma_alpha * (self.current_losses / self.current_counts)
+        # reset stats for the new iteration
+        self.current_losses = torch.zeros(self.num_batches)
+        self.current_counts = torch.zeros(self.num_batches)
+        self.ewma_alpha = 1 / (self.iter_counter ** (1/3))
+        self.iter_counter += 1
+        #  print(f"|alpha|: {self.ewma_alpha:.4f}")
+        #  print(f"|ewma|: {self.ewma:.4f}")
+
+    def find_best(self, population):
+        min_loss = torch.finfo(torch.float32).max
+        best_idx = None
+        for i in range(population.shape[1]):
+            for param, layer in zip(self.model.parameters(),
+                                    self.unzip_layers(population[:, i])):
+                param.data = layer
+            out = self.model(self.x_val)
+            loss = self.criterion(out, self.y_val).item()
+            if loss < min_loss:
+                min_loss = loss
+                best_idx = i
+        return population[:, best_idx]
+
+    def validate_and_test(self, population):
+        best_individual = self.find_best(population)
+        return self.test_model(best_individual), best_individual
 
 
 class DES(object):
@@ -222,6 +281,7 @@ class DES(object):
         self.cpu = torch.device('cpu')
         self.start = timer()
         self.test_func = kwargs.get('test_func', None)
+        self.iter_callback = kwargs.get('iter_callback', None)
 
     def bounce_back_boundary_1d(self, x, lower, upper):
         """TODO
@@ -283,7 +343,7 @@ class DES(object):
 
     def delete_infs_nans(self, x):
         assert torch.isfinite(x).all()
-        #  x[~infs] = self.worst_fitness
+        #  x[~torch.isfinite(x)] = self.worst_fitness
         #  return x
 
     def _fitness_wrapper(self, x):
@@ -568,6 +628,7 @@ class DES(object):
                 iter_log['best_fitness'] = fitness[wb].item()
                 iter_log['mean_fitness'] = fitness.clamp(0, 2.5).mean().item()
                 iter_log['iter'] = self.iter_
+
                 if fitness[wb] < self.best_fit:
                     self.best_fit = fitness[wb].item()
                     if not self.lamarckism:
@@ -606,14 +667,26 @@ class DES(object):
                 print(f"iter={self.iter_} ,best={self.best_fit}")
                 iter_log['best_found'] = self.best_fit
                 if self.iter_ % 50 == 0 and self.test_func is not None:
-                    test_loss, test_acc = self.test_func(self.best_par)
+                    #  test_loss, test_acc = self.test_func(self.best_par)
+                    (test_loss, test_acc), self.best_par = self.test_func(population)
                 else:
                     test_loss, test_acc = None, None
+                #  if self.iter_ % 10 == 0:
+                    #  np.save(f"population_{self.iter_}.npy", population.cpu().numpy())
+                    #  np.save(f"fitnesses/fitness_{self.iter_}.npy", fitness.cpu().numpy())
+                #  diff_norm = np.sqrt(np.sum(diffs.cpu().numpy() ** 2, axis=0))
+                #  assert diff_norm.shape == (self.lambda_,)
+                #  np.save(f'diffs/diffs_{self.iter_}.npy', diff_norm)
+
                 iter_log['test_loss'] = test_loss
                 iter_log['test_acc'] = test_acc
                 log = log.append(iter_log, ignore_index=True)
                 if self.iter_ % 50 == 0:
                     log.to_csv(f'des_log_{self.start}.csv')
 
+                if self.iter_callback:
+                    self.iter_callback()
+
+        log.to_csv(f'des_log_{self.start}.csv')
         #  np.save(f"times_{self.problem_size}.npy", np.array(evaluation_times))
         return self.best_par #, log_
