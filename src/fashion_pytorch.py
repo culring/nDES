@@ -12,13 +12,14 @@ from utils import bootstrap, train_via_des, train_via_gradient, seed_everything
 
 #  EPOCHS = 25000
 POPULATION_MULTIPLIER = 1
-EPOCHS = int(POPULATION_MULTIPLIER * 4 * 1200000)
+#  EPOCHS = int(POPULATION_MULTIPLIER * 4 * 1200000)
+EPOCHS = int(POPULATION_MULTIPLIER * 4000 * 60)
 POPULATION = int(POPULATION_MULTIPLIER * 4000)
 DES_TRAINING = True
 
 DEVICE = torch.device("cuda:1")
-BOOTSTRAP_BATCHES = 10
-MODEL_NAME = "fashion_des_bootstrapped.pth.tar"
+BOOTSTRAP_BATCHES = None
+MODEL_NAME = "fashion_des.pth.tar"
 LOAD_WEIGHTS = False
 SEED_OFFSET = 0
 BATCH_SIZE = 64
@@ -49,6 +50,23 @@ def cycle(loader):
     while True:
         for element in enumerate(loader):
             yield element
+
+
+class MyDatasetLoader:
+    def __init__(self, x_train, y_train, batch_size):
+        self.x_train = x_train
+        self.y_train = y_train
+        self.batch_size = batch_size
+        self.num_batches = int(ceil(x_train.shape[0] / batch_size))
+
+    def cycle(self):
+        while True:
+            for i in range(self.num_batches - 1):
+                idx = i * self.batch_size
+                yield (i, (self.x_train[idx:idx+self.batch_size],
+                       self.y_train[idx:idx+self.batch_size]))
+            idx = (self.num_batches - 1) * self.batch_size
+            yield (self.num_batches - 1, (self.x_train[idx:], self.y_train[idx:]))
 
 
 if __name__ == "__main__":
@@ -113,9 +131,9 @@ if __name__ == "__main__":
 
     print(y_train.unique(return_counts=True))
 
-    train_dataset = TensorDataset(x_train, y_train)
 
     if BOOTSTRAP_BATCHES is not None:
+        train_dataset = TensorDataset(x_train, y_train)
         model = bootstrap(model, train_dataset, DEVICE, num_batches=BOOTSTRAP_BATCHES)
     print(f"Num params: {sum([param.nelement() for param in model.parameters()])}")
     torch.save({"state_dict": model.state_dict()}, "boostrap_adam.pth.tar")
@@ -123,9 +141,10 @@ if __name__ == "__main__":
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters())
 
-    train_loader = cycle(
-        torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=False)
-    )
+    #  train_loader = cycle(
+        #  torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    #  )
+    train_loader = MyDatasetLoader(x_train, y_train, BATCH_SIZE)
 
     if DES_TRAINING:
         des_optim = DESOptimizer(
@@ -133,10 +152,12 @@ if __name__ == "__main__":
             criterion,
             #  x_train,
             #  y_train,
-            train_loader,
+            train_loader.cycle(),
+            #  train_loader,
             None,
             ewma_alpha=0.3,
-            num_batches=ceil(len(train_dataset) / BATCH_SIZE),
+            #  num_batches=ceil(len(train_dataset) / BATCH_SIZE),
+            num_batches=train_loader.num_batches,
             x_val=x_val,
             y_val=y_val,
             restarts=None,
@@ -150,7 +171,7 @@ if __name__ == "__main__":
             nn_train=True,
             lambda_=POPULATION,
             history=16,
-            log_best_val=False,
+            worst_fitness=3,
             device=DEVICE,
         )
         #  train_via_des(model, des_optim, DEVICE, test_dataset, 'des_' + MODEL_NAME)
