@@ -106,7 +106,7 @@ def train_via_des(model, des, device, test_dataset, model_name):
 
     model = des.run(lambda x: test(x, device, test_loader))
     test(model, device, test_loader)
-    torch.save({"state_dict": model.state_dict()}, model_name)
+    torch.save({"state_dict": model.state_dict()}, f"{model_name}_{des.start}.pth.tar")
 
 
 def train_via_gradient(
