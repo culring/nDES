@@ -1,24 +1,40 @@
 import gc
 from math import floor, log, sqrt
+from timeit import default_timer as timer
 
 import numpy as np
 import pandas as pd
 import torch
+from fitness_fixer_cuda import (
+    bounce_back_boundary_2d,
+    create_sorted_weights_for_matmul,
+    fitness_nonlamarckian,
+)
 from torch.distributions import MultivariateNormal
 
-from timeit import default_timer as timer
 from utils import seconds_to_human_readable
-from fitness_fixer_cuda import fitness_nonlamarckian, bounce_back_boundary_2d, create_sorted_weights_for_matmul
+
 #  from pytorch_memlab import profile
 
 
-class DESOptimizer(object):
+class DESOptimizer:
 
     """Interface for the DES optimizer for the neural networks optimization."""
 
-    def __init__(self, model, criterion, X, Y, ewma_alpha, num_batches,
-                 x_val, y_val,
-                 restarts=None, test_func=None, **kwargs):
+    def __init__(
+        self,
+        model,
+        criterion,
+        X,
+        Y,
+        ewma_alpha,
+        num_batches,
+        x_val,
+        y_val,
+        restarts=None,
+        test_func=None,
+        **kwargs,
+    ):
         """TODO: to be defined1.
 
         Args:
@@ -41,8 +57,8 @@ class DESOptimizer(object):
         self.kwargs = kwargs
         self.restarts = restarts
         self.start = timer()
-        if restarts is not None and self.kwargs.get('budget') is not None:
-            self.kwargs['budget'] //= restarts
+        if restarts is not None and self.kwargs.get("budget") is not None:
+            self.kwargs["budget"] //= restarts
         #  self.ewma_alpha = ewma_alpha
         self.ewma_alpha = 1
         self.iter_counter = 1
@@ -54,7 +70,7 @@ class DESOptimizer(object):
         self.current_counts = torch.zeros(num_batches)
         self.zip_layers(model.parameters())
         self.initialize_ewma()
-        self.kwargs['iter_callback'] = self.iter_callback
+        self.kwargs["iter_callback"] = self.iter_callback
 
     def zip_layers(self, layers_iter):
         """Concatenate flattened layers into a single 1-D tensor.
@@ -76,9 +92,9 @@ class DESOptimizer(object):
             tensors.append(tmp)
             if len(shape) > 1:
                 fan_in, fan_out = torch.nn.init._calculate_fan_in_and_fan_out(param)
-                xavier_coeffs.extend([sqrt(6 / (fan_in + fan_out))]*len(tmp))
+                xavier_coeffs.extend([sqrt(6 / (fan_in + fan_out))] * len(tmp))
             else:
-                xavier_coeffs.extend([xavier_coeffs[-1]]*len(tmp))
+                xavier_coeffs.extend([xavier_coeffs[-1]] * len(tmp))
         self.best_value = torch.cat(tensors, 0)
         self.xavier_coeffs = torch.tensor(xavier_coeffs)
 
@@ -108,8 +124,7 @@ class DESOptimizer(object):
         """Custom objective function for the DES optimizer."""
         #  X = Variable(torch.Tensor(self.X).float())
         #  Y = Variable(torch.Tensor(self.Y).long())
-        for param, layer in zip(self.model.parameters(),
-                                self.unzip_layers(weights)):
+        for param, layer in zip(self.model.parameters(), self.unzip_layers(weights)):
             #  param.data = layer
             param.data.copy_(layer)
         batch_idx, (b_x, y) = next(self.data_gen)
@@ -133,9 +148,12 @@ class DESOptimizer(object):
             if self.restarts is not None:
                 for i in range(self.restarts):
                     des = DES(
-                        self.best_value, self._objective_function,
-                        xavier_coeffs=self.xavier_coeffs, log_id=i,
-                        **self.kwargs)
+                        self.best_value,
+                        self._objective_function,
+                        xavier_coeffs=self.xavier_coeffs,
+                        log_id=i,
+                        **self.kwargs,
+                    )
                     self.best_value = des.run()
                     del des
                     if self.test_func is not None:
@@ -144,12 +162,16 @@ class DESOptimizer(object):
                     torch.cuda.empty_cache()
             else:
                 des = DES(
-                    self.best_value, self._objective_function,
-                    xavier_coeffs=self.xavier_coeffs, test_func=self.validate_and_test,
-                    **self.kwargs)
+                    self.best_value,
+                    self._objective_function,
+                    xavier_coeffs=self.xavier_coeffs,
+                    test_func=self.validate_and_test,
+                    **self.kwargs,
+                )
                 self.best_value = des.run()
-            for param, layer in zip(self.model.parameters(),
-                                    self.unzip_layers(self.best_value)):
+            for param, layer in zip(
+                self.model.parameters(), self.unzip_layers(self.best_value)
+            ):
                 #  param.data = layer
                 param.data.copy_(layer)
             return self.model
@@ -158,22 +180,21 @@ class DESOptimizer(object):
     def test_model(self, weights):
         end = timer()
         model = self.model
-        for param, layer in zip(model.parameters(),
-                                self.unzip_layers(weights)):
+        for param, layer in zip(model.parameters(), self.unzip_layers(weights)):
             #  param.data = layer
             param.data.copy_(layer)
         print(f"\nPerf after {seconds_to_human_readable(end - self.start)}")
         return self.test_func(model)
 
     def iter_callback(self):
-        self.ewma *= (1 - self.ewma_alpha)
+        self.ewma *= 1 - self.ewma_alpha
         # calculate normal average for each batch and include it in the EWMA
         self.ewma += self.ewma_alpha * (self.current_losses / self.current_counts)
         # reset stats for the new iteration
         self.current_losses = torch.zeros(self.num_batches)
         # XXX ones to prevent 0 / 0
         self.current_counts = torch.ones(self.num_batches)
-        self.ewma_alpha = 1 / (self.iter_counter ** (1/3))
+        self.ewma_alpha = 1 / (self.iter_counter ** (1 / 3))
         self.iter_counter += 1
         #  print(f"|alpha|: {self.ewma_alpha:.4f}")
         #  print(f"|ewma|: {self.ewma:.4f}")
@@ -183,8 +204,9 @@ class DESOptimizer(object):
         min_loss = torch.finfo(torch.float32).max
         best_idx = None
         for i in range(population.shape[1]):
-            for param, layer in zip(self.model.parameters(),
-                                    self.unzip_layers(population[:, i])):
+            for param, layer in zip(
+                self.model.parameters(), self.unzip_layers(population[:, i])
+            ):
                 #  param.data = layer
                 param.data.copy_(layer)
             out = self.model(self.x_val)
@@ -199,7 +221,7 @@ class DESOptimizer(object):
         return self.test_model(best_individual), best_individual
 
 
-class DES(object):
+class DES:
 
     """Docstring for DES. """
 
@@ -211,21 +233,21 @@ class DES(object):
         self.lower = lower
         self.upper = upper
 
-        self.device = kwargs.get("device", torch.device('cpu'))
+        self.device = kwargs.get("device", torch.device("cpu"))
         self.dtype = kwargs.get("dtype", torch.float32)
-        self.xavier_coeffs = kwargs.get('xavier_coeffs', None)
+        self.xavier_coeffs = kwargs.get("xavier_coeffs", None)
         if self.xavier_coeffs is not None:
             self.xavier_coeffs = self.xavier_coeffs.to(self.device)
 
         if np.isscalar(lower):
             self.lower = torch.tensor(
-                [lower]*self.problem_size, device=self.device,
-                dtype=self.dtype)
+                [lower] * self.problem_size, device=self.device, dtype=self.dtype
+            )
 
         if np.isscalar(upper):
             self.upper = torch.tensor(
-                [upper]*self.problem_size, device=self.device,
-                dtype=self.dtype)
+                [upper] * self.problem_size, device=self.device, dtype=self.dtype
+            )
 
         # Neural networks training mode
         self.nn_train = kwargs.get("nn_train", False)
@@ -245,21 +267,25 @@ class DES(object):
         #  Selection size
         self.mu = kwargs.get("mu", floor(self.lambda_ / 2))
         #  Weights to calculate mean from selected individuals
-        self.weights = log(self.mu + 1) - torch.arange(1., self.mu + 1,
-                                                       device=self.device,
-                                                    dtype=self.dtype).log()
+        self.weights = (
+            log(self.mu + 1)
+            - torch.arange(1.0, self.mu + 1, device=self.device, dtype=self.dtype).log()
+        )
         #     \-> weights are normalized by the sum
         self.weights = self.weights / self.weights.sum()
-        self.weights_pop = log(self.lambda_ + 1) - torch.arange(
-            1., self.lambda_ + 1, device=self.device, dtype=self.dtype).log()
+        self.weights_pop = (
+            log(self.lambda_ + 1)
+            - torch.arange(
+                1.0, self.lambda_ + 1, device=self.device, dtype=self.dtype
+            ).log()
+        )
         self.weights_pop = self.weights_pop / self.weights_pop.sum()
         #  Evolution Path decay factor
         self.cc = kwargs.get("ccum", self.mu / (self.mu + 2))
         #  Evolution Path decay factor
         self.cp = kwargs.get("cp", 1 / sqrt(self.problem_size))
         #  Maximum number of iterations after which algorithm stops
-        self.max_iter = kwargs.get("maxit", floor(
-            self.budget / (self.lambda_ + 1)))
+        self.max_iter = kwargs.get("maxit", floor(self.budget / (self.lambda_ + 1)))
         #  Size of the window of history - the step length history
         self.hist_size = kwargs.get("history", 5)
         self.tol = kwargs.get("tol", 1e-12)
@@ -272,10 +298,10 @@ class DES(object):
         self.lamarckism = kwargs.get("lamarckism", False)
         self.worst_fitness = kwargs.get("worst_fitness", torch.finfo(self.dtype).max)
 
-        self.cpu = torch.device('cpu')
+        self.cpu = torch.device("cpu")
         self.start = timer()
-        self.test_func = kwargs.get('test_func', None)
-        self.iter_callback = kwargs.get('iter_callback', None)
+        self.test_func = kwargs.get("test_func", None)
+        self.iter_callback = kwargs.get("iter_callback", None)
 
     # @profile
     def bounce_back_boundary_1d(self, x, lower, upper):
@@ -289,14 +315,13 @@ class DES(object):
         tensor([-1570.5471,    10.0000,   419.6417,   -10.0000,  -316.1814,
         0.0000, 0.0000])
         """
-        is_lower_boundary_ok = (x >= lower)
-        is_upper_boundary_ok = (x <= upper)
+        is_lower_boundary_ok = x >= lower
+        is_upper_boundary_ok = x <= upper
         if is_lower_boundary_ok.all() and is_upper_boundary_ok.all():
             return x
         delta = upper - lower
         x = torch.where(is_lower_boundary_ok, x, lower + ((lower - x) % delta))
-        x = torch.where(is_upper_boundary_ok, x,
-                        upper - (((upper - x) * -1) % delta))
+        x = torch.where(is_upper_boundary_ok, x, upper - (((upper - x) * -1) % delta))
         #  x = self.delete_infs_nans(x)
         self.delete_infs_nans(x)
         return x
@@ -317,52 +342,49 @@ class DES(object):
         if (x >= self.lower).all() and (x <= self.upper).all():
             self.count_eval += 1
             return self.fn(x)
-        else:
-            return self.worst_fitness
+        return self.worst_fitness
 
     # @profile
     def _fitness_lamarckian(self, x):
-        if not np.isscalar(x):
-            cols = 1 if len(x.shape) == 1 else x.shape[1]
-            if self.count_eval + cols <= self.budget:
-                ret = []
-                if cols > 1:
-                    for i in range(cols):
-                        ret.append(self._fitness_wrapper(x[:, i]))
-                else:
-                    return self._fitness_wrapper(x)
-                return torch.tensor(ret, device=self.device, dtype=self.dtype)
-            else:
-                ret = []
-                budget_left = self.budget - self.count_eval
-                for i in range(budget_left):
-                    ret.append(self._fitness_wrapper(x[:, i]))
-                if not ret and cols == 1:
-                    return self.worst_fitness
-                return torch.tensor(
-                    ret + [self.worst_fitness]*(cols - budget_left),
-                    device=self.device, dtype=self.dtype)
-        else:
+        if np.isscalar(x):
             if self.count_eval < self.budget:
                 return self._fitness_wrapper(x)
-            else:
-                return self.worst_fitness
+            return self.worst_fitness
+
+        cols = 1 if len(x.shape) == 1 else x.shape[1]
+        fitnesses = []
+        if self.count_eval + cols <= self.budget:
+            if cols > 1:
+                for i in range(cols):
+                    fitnesses.append(self._fitness_wrapper(x[:, i]))
+                return torch.tensor(fitnesses, device=self.device, dtype=self.dtype)
+            return self._fitness_wrapper(x)
+
+        budget_left = self.budget - self.count_eval
+        for i in range(budget_left):
+            fitnesses.append(self._fitness_wrapper(x[:, i]))
+        if not fitnesses and cols == 1:
+            return self.worst_fitness
+        return torch.tensor(
+            fitnesses + [self.worst_fitness] * (cols - budget_left),
+            device=self.device,
+            dtype=self.dtype,
+        )
 
     # @profile
     def _fitness_non_lamarckian(self, x, fitness):
         summed = torch.zeros_like(fitness)
-        fitness_nonlamarckian(x, self.lower[0], self.upper[0], self.upper[0] -
-                              self.lower[0], summed)
+        fitness_nonlamarckian(
+            x, self.lower[0], self.upper[0], self.upper[0] - self.lower[0], summed
+        )
         mask = summed > 0
         fitness[mask] = self.worst_fit + summed[mask]
         return fitness
 
     #  @profile
     def get_random_samples(self, limit):
-        history_sample1 = torch.randint(0, limit, (self.lambda_,),
-                                        device=self.cpu)
-        history_sample2 = torch.randint(0, limit, (self.lambda_,),
-                                        device=self.cpu)
+        history_sample1 = torch.randint(0, limit, (self.lambda_,), device=self.cpu)
+        history_sample2 = torch.randint(0, limit, (self.lambda_,), device=self.cpu)
 
         x1_sample = torch.randint(0, self.mu, (self.lambda_,), device=self.cpu)
         x2_sample = torch.randint(0, self.mu, (self.lambda_,), device=self.cpu)
@@ -371,14 +393,26 @@ class DES(object):
     #  @profile
     def get_diffs(self, hist_head, history, d_mean, pc):
         limit = hist_head + 1 if self.iter_ <= self.hist_size else self.hist_size
-        history_sample1, history_sample2, x1_sample, x2_sample = self.get_random_samples(limit)
+        (
+            history_sample1,
+            history_sample2,
+            x1_sample,
+            x2_sample,
+        ) = self.get_random_samples(limit)
 
         x1 = history[:, x1_sample, history_sample1]
         x2 = history[:, x2_sample, history_sample1]
         x_diff = x1 - x2
         diffs_cpu = (
-            sqrt(self.cc) * (x_diff + torch.randn(self.lambda_, device=self.cpu, dtype=self.dtype) * d_mean[:, history_sample1])
-            + sqrt(1 - self.cc) * torch.randn(self.lambda_, device=self.cpu, dtype=self.dtype) * pc[:, history_sample2]
+            sqrt(self.cc)
+            * (
+                x_diff
+                + torch.randn(self.lambda_, device=self.cpu, dtype=self.dtype)
+                * d_mean[:, history_sample1]
+            )
+            + sqrt(1 - self.cc)
+            * torch.randn(self.lambda_, device=self.cpu, dtype=self.dtype)
+            * pc[:, history_sample2]
         )
         return diffs_cpu
 
@@ -395,29 +429,48 @@ class DES(object):
         # The worst solution found so far
         self.worst_fit = None
 
-        d_mean = torch.zeros((self.problem_size, self.hist_size),
-                             device=self.cpu, dtype=self.dtype)
+        d_mean = torch.zeros(
+            (self.problem_size, self.hist_size), device=self.cpu, dtype=self.dtype
+        )
         #  ft_history = torch.zeros(self.hist_size, device=self.device, dtype=self.dtype)
-        pc = torch.zeros((self.problem_size, self.hist_size),
-                         device=self.cpu, dtype=self.dtype)
+        pc = torch.zeros(
+            (self.problem_size, self.hist_size), device=self.cpu, dtype=self.dtype
+        )
 
-        mean = torch.zeros_like(self.initial_value).unsqueeze(1).repeat(1, self.lambda_).cpu()
+        mean = (
+            torch.zeros_like(self.initial_value)
+            .unsqueeze(1)
+            .repeat(1, self.lambda_)
+            .cpu()
+        )
         sd = torch.eye(self.lambda_, device=self.device).cpu()
         normal = MultivariateNormal(mean, sd)
         sorted_weights = torch.zeros_like(self.weights_pop)
 
-        log = pd.DataFrame(columns=['step', 'pc', 'mean_fitness', 'best_fitness',
-                                    'fn_cum', 'best_found', 'iter'])
+        log_ = pd.DataFrame(
+            columns=[
+                "step",
+                "pc",
+                "mean_fitness",
+                "best_fitness",
+                "fn_cum",
+                "best_found",
+                "iter",
+            ]
+        )
         #  evaluation_times = []
         while self.count_eval < self.budget:  # and self.iter_ < self.max_iter:
 
             hist_head = -1
             self.iter_ = -1
 
-            history = torch.zeros((self.problem_size, self.mu, self.hist_size), dtype=self.dtype, device=self.cpu)
+            history = torch.zeros(
+                (self.problem_size, self.mu, self.hist_size),
+                dtype=self.dtype,
+                device=self.cpu,
+            )
             self.Ft = self.initFt
             population = None
-            population_repaired = None
 
             gc.collect()
             torch.cuda.empty_cache()
@@ -429,7 +482,8 @@ class DES(object):
                 population += self.initial_value[:, None]
                 population[:, 0] = self.initial_value
             population = self.bounce_back_boundary_2d_(
-                population, self.lower, self.upper)
+                population, self.lower, self.upper
+            )
 
             #  start = timer()
             fitness = self._fitness_lamarckian(population)
@@ -445,7 +499,7 @@ class DES(object):
             sorted_weights_pop = self.weights_pop[sorting_idx]
             pop_mean = population.matmul(sorted_weights_pop)
 
-            chi_N = sqrt(self.problem_size)
+            #  chi_N = sqrt(self.problem_size)
             hist_norm = 1 / sqrt(2)
 
             stoptol = False
@@ -460,7 +514,7 @@ class DES(object):
 
                 # Select best 'mu' individuals of population
                 sorting_idx = fitness.argsort()
-                selection = sorting_idx[:self.mu]
+                selection = sorting_idx[: self.mu]
 
                 # Save selected population in the history buffer
                 #  history[:, :, hist_head] = (population[:, selection] * hist_norm / self.Ft).cpu()
@@ -470,12 +524,10 @@ class DES(object):
                 # Calculate weighted mean of selected points
                 old_mean.copy_(new_mean)
                 sorted_weights.zero_()
-                sorted_weights = create_sorted_weights_for_matmul(self.weights,
-                                                                  sorting_idx.int(),
-                                                                  sorted_weights,
-                                                                  self.mu)
+                sorted_weights = create_sorted_weights_for_matmul(
+                    self.weights, sorting_idx.int(), sorted_weights, self.mu
+                )
                 new_mean = population.matmul(sorted_weights)
-
 
                 # Write to buffers
                 tmp = new_mean - pop_mean
@@ -485,16 +537,16 @@ class DES(object):
 
                 # Update parameters
                 if hist_head == 0:
-                    pc[:, hist_head] = \
-                        sqrt(self.mu * self.cp * (2 - self.cp)) * step
+                    pc[:, hist_head] = sqrt(self.mu * self.cp * (2 - self.cp)) * step
                 else:
-                    pc[:, hist_head] = (1 - self.cp) * pc[:, hist_head - 1] + \
-                        sqrt(self.mu * self.cp * (2 - self.cp)) * step
+                    pc[:, hist_head] = (1 - self.cp) * pc[:, hist_head - 1] + sqrt(
+                        self.mu * self.cp * (2 - self.cp)
+                    ) * step
 
                 print(f"|step|={(step**2).sum().item()}")
                 print(f"|pc|={(pc**2).sum().item()}")
-                iter_log['step'] = (step**2).sum().item()
-                iter_log['pc'] = (pc**2).sum().item()
+                iter_log["step"] = (step ** 2).sum().item()
+                iter_log["pc"] = (pc ** 2).sum().item()
 
                 # Sample from history with uniform distribution
                 diffs_cpu = self.get_diffs(hist_head, history, d_mean, pc)
@@ -505,12 +557,14 @@ class DES(object):
                 population += new_mean.unsqueeze(1) * self.Ft
                 #  population.copy_(diffs)
                 #  population = diffs  # +
-                    # self.tol *
-                    # (1 - 2 / sqrt(self.problem_size)) ** (self.iter_ / 2) *
-                    # torch.randn(diffs.shape, device=self.device, dtype=self.dtype) / chi_N)
+                # self.tol *
+                # (1 - 2 / sqrt(self.problem_size)) ** (self.iter_ / 2) *
+                # torch.randn(diffs.shape, device=self.device, dtype=self.dtype) / chi_N)
 
                 if self.lamarckism:
-                    population = self.bounce_back_boundary_2d_(population, self.lower, self.upper)
+                    population = self.bounce_back_boundary_2d_(
+                        population, self.lower, self.upper
+                    )
 
                 sorted_weights_pop = self.weights_pop[sorting_idx]
                 pop_mean = population.matmul(sorted_weights_pop)
@@ -525,14 +579,15 @@ class DES(object):
                 #  evaluation_times.append(end - start)
                 if not self.lamarckism:
                     fitness_non_lamarckian = self._fitness_non_lamarckian(
-                            population, fitness)
+                        population, fitness
+                    )
 
                 wb = fitness.argmin()
                 print(f"best fitness: {fitness[wb]}")
                 print(f"mean fitness: {fitness.clamp(0, 2.5).mean()}")
-                iter_log['best_fitness'] = fitness[wb].item()
-                iter_log['mean_fitness'] = fitness.clamp(0, 2.5).mean().item()
-                iter_log['iter'] = self.iter_
+                iter_log["best_fitness"] = fitness[wb].item()
+                iter_log["mean_fitness"] = fitness.clamp(0, 2.5).mean().item()
+                iter_log["iter"] = self.iter_
 
                 # Check worst fit
                 ww = fitness.argmax()
@@ -546,17 +601,20 @@ class DES(object):
                 # Check if the middle point is the best found so far
                 cum_mean = 0.8 * cum_mean + 0.2 * new_mean
                 cum_mean_repaired = self.bounce_back_boundary_1d(
-                    cum_mean, self.lower, self.upper)
+                    cum_mean, self.lower, self.upper
+                )
 
                 fn_cum = self._fitness_lamarckian(cum_mean_repaired)
                 print(f"fn_cum: {fn_cum}")
-                iter_log['fn_cum'] = fn_cum
+                iter_log["fn_cum"] = fn_cum
 
                 if fitness[0] <= self.stopfitness:
                     break
 
-                if abs(fitness.max() - fitness.min()) < self.tol and \
-                        self.count_eval < 0.8 * self.budget:
+                if (
+                    abs(fitness.max() - fitness.min()) < self.tol
+                    and self.count_eval < 0.8 * self.budget
+                ):
                     stoptol = True
                 print(f"iter={self.iter_}")
                 if self.iter_ % 50 == 0 and self.test_func is not None:
@@ -564,21 +622,21 @@ class DES(object):
                 else:
                     test_loss, test_acc = None, None
                 #  if self.iter_ % 10 == 0:
-                    #  np.save(f"population_{self.iter_}.npy", population.cpu().numpy())
-                    #  np.save(f"fitnesses/fitness_{self.iter_}.npy", fitness.cpu().numpy())
+                #  np.save(f"population_{self.iter_}.npy", population.cpu().numpy())
+                #  np.save(f"fitnesses/fitness_{self.iter_}.npy", fitness.cpu().numpy())
                 #  diff_norm = np.sqrt(np.sum(diffs.cpu().numpy() ** 2, axis=0))
                 #  assert diff_norm.shape == (self.lambda_,)
                 #  np.save(f'diffs/diffs_{self.iter_}.npy', diff_norm)
 
-                iter_log['test_loss'] = test_loss
-                iter_log['test_acc'] = test_acc
-                log = log.append(iter_log, ignore_index=True)
+                iter_log["test_loss"] = test_loss
+                iter_log["test_acc"] = test_acc
+                log_ = log_.append(iter_log, ignore_index=True)
                 if self.iter_ % 50 == 0:
-                    log.to_csv(f'des_log_{self.start}.csv')
+                    log_.to_csv(f"des_log_{self.start}.csv")
 
                 if self.iter_callback:
                     self.iter_callback()
 
-        log.to_csv(f'des_log_{self.start}.csv')
+        log_.to_csv(f"des_log_{self.start}.csv")
         #  np.save(f"times_{self.problem_size}.npy", np.array(evaluation_times))
-        return self.best_par #, log_
+        return self.best_par  # , log_

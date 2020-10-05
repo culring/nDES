@@ -1,18 +1,18 @@
+from math import ceil
+
+import numpy as np
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from pytorch_lightning.metrics import functional as FM
-from torch.utils.data import TensorDataset, DataLoader
-from torchvision import datasets, transforms
-from sklearn.model_selection import StratifiedKFold, train_test_split
-import numpy as np
-from math import ceil
-
-from des_torch import DESOptimizer
-from utils import bootstrap, train_via_des, seed_everything
-import pytorch_lightning as pl
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from sklearn.model_selection import StratifiedKFold, train_test_split
+from torch.utils.data import DataLoader, TensorDataset
+from torchvision import datasets, transforms
+
+from des_torch import DESOptimizer
+from utils import seed_everything, train_via_des
 
 #  EPOCHS = 25000
 POPULATION_MULTIPLIER = 8
@@ -90,19 +90,13 @@ class Net(pl.LightningModule):
         return x_train, y_train, x_val, y_val
 
     def train_dataloader(self):
-        return DataLoader(
-            self.train_dataset, batch_size=64, shuffle=True
-        )
+        return DataLoader(self.train_dataset, batch_size=64, shuffle=True)
 
     def val_dataloader(self):
-        return DataLoader(
-            self.val_dataset, batch_size=64
-        )
+        return DataLoader(self.val_dataset, batch_size=64)
 
     def test_dataloader(self):
-        return DataLoader(
-            self.test_dataset, batch_size=64
-        )
+        return DataLoader(self.test_dataset, batch_size=64)
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters())
@@ -110,25 +104,21 @@ class Net(pl.LightningModule):
     def training_step(self, batch, batch_nb):
         x, y = batch
         loss = F.nll_loss(self(x), y)
-        tensorboard_logs = {'train_loss': loss}
-        return {'loss': loss, 'log': tensorboard_logs}
+        tensorboard_logs = {"train_loss": loss}
+        return {"loss": loss, "log": tensorboard_logs}
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
 
         # identifying number of correct predections in a given batch
-        correct=y_hat.argmax(dim=1).eq(y).sum().item()
+        correct = y_hat.argmax(dim=1).eq(y).sum().item()
 
         # identifying total number of labels in a given batch
-        total=len(y)
+        total = len(y)
 
         loss = F.nll_loss(y_hat, y)
-        return {
-            'val_loss': loss,
-            "correct": correct,
-            "total": total
-        }
+        return {"val_loss": loss, "correct": correct, "total": total}
 
     def test_step(self, batch, batch_idx):
         result = self.validation_step(batch, batch_idx)
@@ -138,16 +128,22 @@ class Net(pl.LightningModule):
         # called at the end of a validation epoch
         # outputs is an array with what you returned in validation_step for each batch
         # outputs = [{'loss': batch_0_loss}, {'loss': batch_1_loss}, ..., {'loss': batch_n_loss}]
-        avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-        correct=sum([x["correct"] for  x in outputs])
-        total=sum([x["total"] for  x in outputs])
-        tensorboard_logs = {'val_loss': avg_loss, 'val_acc': correct / total}
-        return {'avg_val_loss': avg_loss, 'val_acc': correct / total, 'log': tensorboard_logs}
+        avg_loss = torch.stack([x["val_loss"] for x in outputs]).mean()
+        correct = sum([x["correct"] for x in outputs])
+        total = sum([x["total"] for x in outputs])
+        tensorboard_logs = {"val_loss": avg_loss, "val_acc": correct / total}
+        return {
+            "avg_val_loss": avg_loss,
+            "val_acc": correct / total,
+            "log": tensorboard_logs,
+        }
 
     def test_epoch_end(self, outputs):
         result = self.validation_epoch_end(outputs)
-        for old_key, new_key in {'val_acc': 'test_acc', 'avg_val_loss':
-                                 'avg_test_loss'}.items():
+        for old_key, new_key in {
+            "val_acc": "test_acc",
+            "avg_val_loss": "avg_test_loss",
+        }.items():
             result[new_key] = result.pop(old_key)
         return result
 
@@ -169,8 +165,13 @@ class MyDatasetLoader:
         while True:
             for i in range(self.num_batches - 1):
                 idx = i * self.batch_size
-                yield (i, (self.x_train[idx:idx+self.batch_size],
-                       self.y_train[idx:idx+self.batch_size]))
+                yield (
+                    i,
+                    (
+                        self.x_train[idx : idx + self.batch_size],
+                        self.y_train[idx : idx + self.batch_size],
+                    ),
+                )
             idx = (self.num_batches - 1) * self.batch_size
             yield (self.num_batches - 1, (self.x_train[idx:], self.y_train[idx:]))
 
@@ -207,11 +208,11 @@ if __name__ == "__main__":
 
         if BOOTSTRAP_BATCHES is not None:
             early_stop_callback = EarlyStopping(
-               monitor='val_loss',
-               min_delta=0.00,
-               patience=3,
-               verbose=False,
-               mode='min'
+                monitor="val_loss",
+                min_delta=0.00,
+                patience=3,
+                verbose=False,
+                mode="min",
             )
             trainer = Trainer(gpus=1, early_stop_callback=early_stop_callback)
             trainer.fit(model)
@@ -247,11 +248,7 @@ if __name__ == "__main__":
         train_via_des(model, des_optim, DEVICE, test_dataset, MODEL_NAME)
     else:
         early_stop_callback = EarlyStopping(
-           monitor='val_loss',
-           min_delta=0.00,
-           patience=3,
-           verbose=False,
-           mode='min'
+            monitor="val_loss", min_delta=0.00, patience=3, verbose=False, mode="min"
         )
         trainer = Trainer(gpus=1, early_stop_callback=early_stop_callback)
         trainer.fit(model)
