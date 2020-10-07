@@ -1,5 +1,5 @@
 import torch
-from fitness_fixer_cuda import bounce_back_boundary_2d
+from gpu_utils import bounce_back_boundary_2d
 
 if __name__ == "__main__":
     device = torch.device("cuda:0")

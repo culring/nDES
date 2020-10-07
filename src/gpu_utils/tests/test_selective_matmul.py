@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from numpy.random import shuffle
-from fitness_fixer_cuda import poor_selective_matmul, create_sorted_weights_for_matmul
+from gpu_utils import poor_selective_matmul, create_sorted_weights_for_matmul
 import pytest
 import random
 

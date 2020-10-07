@@ -5,7 +5,7 @@ from timeit import default_timer as timer
 import numpy as np
 import pandas as pd
 import torch
-from fitness_fixer_cuda import (
+from gpu_utils import (
     bounce_back_boundary_2d,
     create_sorted_weights_for_matmul,
     fitness_nonlamarckian,

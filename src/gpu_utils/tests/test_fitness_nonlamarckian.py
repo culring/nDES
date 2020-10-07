@@ -1,5 +1,5 @@
 import torch
-from fitness_fixer_cuda import fitness_nonlamarckian
+from gpu_utils import fitness_nonlamarckian
 
 
 if __name__ == "__main__":

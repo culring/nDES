@@ -2,7 +2,7 @@ import torch
 from timerit import Timerit
 import numpy as np
 from numpy.random import shuffle
-from fitness_fixer_cuda import poor_selective_matmul, create_sorted_weights_for_matmul
+from gpu_utils import poor_selective_matmul, create_sorted_weights_for_matmul
 np.random.seed(42)
 
 
