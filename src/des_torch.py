@@ -5,14 +5,14 @@ from timeit import default_timer as timer
 import numpy as np
 import pandas as pd
 import torch
-from gpu_utils import (
-    bounce_back_boundary_2d,
-    create_sorted_weights_for_matmul,
-    fitness_nonlamarckian,
-)
-from torch.distributions import MultivariateNormal
 
-from utils import seconds_to_human_readable
+from gpu_utils import create_sorted_weights_for_matmul, fitness_nonlamarckian
+from population_initializers import XavierMVNPopulationInitializer
+from utils import (
+    bounce_back_boundary_1d,
+    bounce_back_boundary_2d,
+    seconds_to_human_readable,
+)
 
 #  from pytorch_memlab import profile
 
@@ -31,6 +31,7 @@ class DESOptimizer:
         num_batches,
         x_val,
         y_val,
+        population_initializer=XavierMVNPopulationInitializer,
         restarts=None,
         test_func=None,
         **kwargs,
@@ -49,6 +50,7 @@ class DESOptimizer:
         self.best_value = None
         self.model = model
         self.criterion = criterion
+        self.population_initializer = population_initializer
         #  self.X = X
         #  self.Y = Y
         self.data_gen = X
@@ -150,6 +152,12 @@ class DESOptimizer:
                     des = DES(
                         self.best_value,
                         self._objective_function,
+                        population_initializer=self.population_initializer(
+                            self.best_value,
+                            self.kwargs["lambda_"],
+                            self.xavier_coeffs,
+                            self.kwargs["device"],
+                        ),
                         xavier_coeffs=self.xavier_coeffs,
                         log_id=i,
                         **self.kwargs,
@@ -164,6 +172,12 @@ class DESOptimizer:
                 des = DES(
                     self.best_value,
                     self._objective_function,
+                    population_initializer=self.population_initializer(
+                        self.best_value,
+                        self.kwargs["lambda_"],
+                        self.xavier_coeffs,
+                        self.kwargs["device"],
+                    ),
                     xavier_coeffs=self.xavier_coeffs,
                     test_func=self.validate_and_test,
                     **self.kwargs,
@@ -225,7 +239,9 @@ class DES:
 
     """Docstring for DES. """
 
-    def __init__(self, initial_value, fn, lower, upper, **kwargs):
+    def __init__(
+        self, initial_value, fn, lower, upper, population_initializer, **kwargs
+    ):
         self.initial_value = torch.empty_like(initial_value)
         self.initial_value.copy_(initial_value)
         self.problem_size = int(len(initial_value))
@@ -235,9 +251,7 @@ class DES:
 
         self.device = kwargs.get("device", torch.device("cpu"))
         self.dtype = kwargs.get("dtype", torch.float32)
-        self.xavier_coeffs = kwargs.get("xavier_coeffs", None)
-        if self.xavier_coeffs is not None:
-            self.xavier_coeffs = self.xavier_coeffs.to(self.device)
+        self.population_initializer = population_initializer
 
         if np.isscalar(lower):
             self.lower = torch.tensor(
@@ -248,9 +262,6 @@ class DES:
             self.upper = torch.tensor(
                 [upper] * self.problem_size, device=self.device, dtype=self.dtype
             )
-
-        # Neural networks training mode
-        self.nn_train = kwargs.get("nn_train", False)
 
         # Scaling factor of difference vectors (a variable!)
         self.Ft = kwargs.get("Ft", 1)
@@ -302,40 +313,6 @@ class DES:
         self.start = timer()
         self.test_func = kwargs.get("test_func", None)
         self.iter_callback = kwargs.get("iter_callback", None)
-
-    # @profile
-    def bounce_back_boundary_1d(self, x, lower, upper):
-        """TODO
-
-        Examples:
-        >>> a = torch.tensor([-2429.4529, 10, 580.3583, -10, 1316.1814, 0, 0])
-        >>> lower = torch.ones(7) * -2000
-        >>> upper = torch.ones(7) * 500
-        >>> bounce_back_boundary_1d(a, lower, upper)
-        tensor([-1570.5471,    10.0000,   419.6417,   -10.0000,  -316.1814,
-        0.0000, 0.0000])
-        """
-        is_lower_boundary_ok = x >= lower
-        is_upper_boundary_ok = x <= upper
-        if is_lower_boundary_ok.all() and is_upper_boundary_ok.all():
-            return x
-        delta = upper - lower
-        x = torch.where(is_lower_boundary_ok, x, lower + ((lower - x) % delta))
-        x = torch.where(is_upper_boundary_ok, x, upper - (((upper - x) * -1) % delta))
-        #  x = self.delete_infs_nans(x)
-        self.delete_infs_nans(x)
-        return x
-
-    # @profile
-    def bounce_back_boundary_2d_(self, x, lower, upper):
-        lower = lower[0]
-        upper = upper[0]
-        delta = upper - lower
-        return bounce_back_boundary_2d(x, lower, upper, delta)
-
-    # @profile
-    def delete_infs_nans(self, x):
-        assert torch.isfinite(x).all()
 
     # @profile
     def _fitness_wrapper(self, x):
@@ -432,19 +409,10 @@ class DES:
         d_mean = torch.zeros(
             (self.problem_size, self.hist_size), device=self.cpu, dtype=self.dtype
         )
-        #  ft_history = torch.zeros(self.hist_size, device=self.device, dtype=self.dtype)
         pc = torch.zeros(
             (self.problem_size, self.hist_size), device=self.cpu, dtype=self.dtype
         )
 
-        mean = (
-            torch.zeros_like(self.initial_value)
-            .unsqueeze(1)
-            .repeat(1, self.lambda_)
-            .cpu()
-        )
-        sd = torch.eye(self.lambda_, device=self.device).cpu()
-        normal = MultivariateNormal(mean, sd)
         sorted_weights = torch.zeros_like(self.weights_pop)
 
         log_ = pd.DataFrame(
@@ -476,14 +444,7 @@ class DES:
             torch.cuda.empty_cache()
             cum_mean = (self.upper + self.lower) / 2
 
-            if self.nn_train:
-                population = normal.sample().to(self.device)
-                population *= self.xavier_coeffs[:, None]
-                population += self.initial_value[:, None]
-                population[:, 0] = self.initial_value
-            population = self.bounce_back_boundary_2d_(
-                population, self.lower, self.upper
-            )
+            population = self.population_initializer.get_new_population(lower=self.lower, upper=self.upper)
 
             #  start = timer()
             fitness = self._fitness_lamarckian(population)
@@ -562,7 +523,7 @@ class DES:
                 # torch.randn(diffs.shape, device=self.device, dtype=self.dtype) / chi_N)
 
                 if self.lamarckism:
-                    population = self.bounce_back_boundary_2d_(
+                    population = bounce_back_boundary_2d(
                         population, self.lower, self.upper
                     )
 
@@ -600,7 +561,7 @@ class DES:
 
                 # Check if the middle point is the best found so far
                 cum_mean = 0.8 * cum_mean + 0.2 * new_mean
-                cum_mean_repaired = self.bounce_back_boundary_1d(
+                cum_mean_repaired = bounce_back_boundary_1d(
                     cum_mean, self.lower, self.upper
                 )
 
