@@ -3,16 +3,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import datasets, transforms
 
-from des_torch import DESOptimizer
-from utils import bootstrap, train_via_des, train_via_gradient, seed_everything
+from ndes import NDESOptimizer
+from utils import bootstrap, train_via_ndes, train_via_gradient, seed_everything
 
 #  EPOCHS = 25000
 EPOCHS = 300000
-DES_TRAINING = True
+NDES_TRAINING = True
 #  DEVICE = torch.device("cpu")
 DEVICE = torch.device("cuda:0")
 BOOTSTRAP_BATCHES = None
-MODEL_NAME = "mnist_des.pth.tar"
+MODEL_NAME = "mnist_ndes.pth.tar"
 LOAD_WEIGHTS = False
 SEED_OFFSET = 0
 BATCH_SIZE = 1000
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters())
 
-    if DES_TRAINING:
+    if NDES_TRAINING:
         for x, y in torch.utils.data.DataLoader(
             train_dataset, batch_size=len(train_dataset), shuffle=True
         ):
@@ -82,7 +82,7 @@ if __name__ == "__main__":
             x_train = x_train[:BATCH_SIZE, :]
             y_train = y_train[:BATCH_SIZE]
 
-        des_optim = DESOptimizer(
+        ndes_optim = NDESOptimizer(
             model,
             criterion,
             x_train,
@@ -98,7 +98,7 @@ if __name__ == "__main__":
             log_best_val=False,
             device=DEVICE,
         )
-        train_via_des(model, des_optim, DEVICE, test_dataset, MODEL_NAME)
+        train_via_ndes(model, ndes_optim, DEVICE, test_dataset, MODEL_NAME)
     else:
         train_via_gradient(
             model, criterion, optimizer, train_dataset, test_dataset, EPOCHS, DEVICE

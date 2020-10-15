@@ -17,9 +17,9 @@ from utils import (
 #  from pytorch_memlab import profile
 
 
-class DESOptimizer:
+class NDESOptimizer:
 
-    """Interface for the DES optimizer for the neural networks optimization."""
+    """Interface for the NDES optimizer for the neural networks optimization."""
 
     def __init__(
         self,
@@ -43,8 +43,8 @@ class DESOptimizer:
             criterion: Loss function, must be minimizable.
             X: Training data.
             Y: Training ground truth for the data.
-            restarts: Optional number of DES's restarts.
-            **kwargs: Keyword arguments for DES optimizer
+            restarts: Optional number of NDES's restarts.
+            **kwargs: Keyword arguments for NDES optimizer
         """
         self._layers_offsets_shapes = []
         self.best_value = None
@@ -123,7 +123,7 @@ class DESOptimizer:
 
     # @profile
     def _objective_function(self, weights):
-        """Custom objective function for the DES optimizer."""
+        """Custom objective function for the NDES optimizer."""
         #  X = Variable(torch.Tensor(self.X).float())
         #  Y = Variable(torch.Tensor(self.Y).long())
         for param, layer in zip(self.model.parameters(), self.unzip_layers(weights)):
@@ -149,7 +149,7 @@ class DESOptimizer:
                 param.requires_grad = False
             if self.restarts is not None:
                 for i in range(self.restarts):
-                    des = DES(
+                    ndes = NDES(
                         self.best_value,
                         self._objective_function,
                         population_initializer=self.population_initializer(
@@ -162,14 +162,14 @@ class DESOptimizer:
                         log_id=i,
                         **self.kwargs,
                     )
-                    self.best_value = des.run()
-                    del des
+                    self.best_value = ndes.run()
+                    del ndes
                     if self.test_func is not None:
                         self.test_model(self.best_value)
                     gc.collect()
                     torch.cuda.empty_cache()
             else:
-                des = DES(
+                ndes = NDES(
                     self.best_value,
                     self._objective_function,
                     population_initializer=self.population_initializer(
@@ -182,7 +182,7 @@ class DESOptimizer:
                     test_func=self.validate_and_test,
                     **self.kwargs,
                 )
-                self.best_value = des.run()
+                self.best_value = ndes.run()
             for param, layer in zip(
                 self.model.parameters(), self.unzip_layers(self.best_value)
             ):
@@ -235,9 +235,9 @@ class DESOptimizer:
         return self.test_model(best_individual), best_individual
 
 
-class DES:
+class NDES:
 
-    """Docstring for DES. """
+    """Docstring for NDES. """
 
     def __init__(
         self, initial_value, fn, lower, upper, population_initializer, **kwargs
@@ -582,22 +582,16 @@ class DES:
                     (test_loss, test_acc), self.best_par = self.test_func(population)
                 else:
                     test_loss, test_acc = None, None
-                #  if self.iter_ % 10 == 0:
-                #  np.save(f"population_{self.iter_}.npy", population.cpu().numpy())
-                #  np.save(f"fitnesses/fitness_{self.iter_}.npy", fitness.cpu().numpy())
-                #  diff_norm = np.sqrt(np.sum(diffs.cpu().numpy() ** 2, axis=0))
-                #  assert diff_norm.shape == (self.lambda_,)
-                #  np.save(f'diffs/diffs_{self.iter_}.npy', diff_norm)
 
                 iter_log["test_loss"] = test_loss
                 iter_log["test_acc"] = test_acc
                 log_ = log_.append(iter_log, ignore_index=True)
                 if self.iter_ % 50 == 0:
-                    log_.to_csv(f"des_log_{self.start}.csv")
+                    log_.to_csv(f"ndes_log_{self.start}.csv")
 
                 if self.iter_callback:
                     self.iter_callback()
 
-        log_.to_csv(f"des_log_{self.start}.csv")
+        log_.to_csv(f"ndes_log_{self.start}.csv")
         #  np.save(f"times_{self.problem_size}.npy", np.array(evaluation_times))
         return self.best_par  # , log_

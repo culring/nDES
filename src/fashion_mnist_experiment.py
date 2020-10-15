@@ -11,19 +11,19 @@ from sklearn.model_selection import StratifiedKFold, train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision import datasets, transforms
 
-from des_torch import DESOptimizer
-from utils import seed_everything, train_via_des
+from ndes import NDESOptimizer
+from utils import seed_everything, train_via_ndes
 
 #  EPOCHS = 25000
 POPULATION_MULTIPLIER = 8
 #  EPOCHS = int(POPULATION_MULTIPLIER * 4 * 1200000)
 EPOCHS = int(POPULATION_MULTIPLIER * 4000 * 1200)
 POPULATION = int(POPULATION_MULTIPLIER * 4000)
-DES_TRAINING = True
+NDES_TRAINING = True
 
 DEVICE = torch.device("cuda:0")
 BOOTSTRAP_BATCHES = True
-MODEL_NAME = "fashion_des_bootstrapped"
+MODEL_NAME = "fashion_ndes_bootstrapped"
 LOAD_WEIGHTS = False
 SEED_OFFSET = 0
 BATCH_SIZE = 64
@@ -111,10 +111,8 @@ class Net(pl.LightningModule):
         x, y = batch
         y_hat = self(x)
 
-        # identifying number of correct predections in a given batch
         correct = y_hat.argmax(dim=1).eq(y).sum().item()
 
-        # identifying total number of labels in a given batch
         total = len(y)
 
         loss = F.nll_loss(y_hat, y)
@@ -125,9 +123,6 @@ class Net(pl.LightningModule):
         return result
 
     def validation_epoch_end(self, outputs):
-        # called at the end of a validation epoch
-        # outputs is an array with what you returned in validation_step for each batch
-        # outputs = [{'loss': batch_0_loss}, {'loss': batch_1_loss}, ..., {'loss': batch_n_loss}]
         avg_loss = torch.stack([x["val_loss"] for x in outputs]).mean()
         correct = sum([x["correct"] for x in outputs])
         total = sum([x["total"] for x in outputs])
@@ -183,7 +178,7 @@ if __name__ == "__main__":
     if LOAD_WEIGHTS:
         model.load_state_dict(torch.load(MODEL_NAME)["state_dict"])
 
-    if DES_TRAINING:
+    if NDES_TRAINING:
         x_train, y_train, x_val, y_val = model.prepare_data()
         test_dataset = model.test_dataset
 
@@ -222,7 +217,7 @@ if __name__ == "__main__":
 
         criterion = nn.CrossEntropyLoss()
         train_loader = MyDatasetLoader(x_train, y_train, BATCH_SIZE)
-        des_optim = DESOptimizer(
+        ndes_optim = NDESOptimizer(
             model,
             criterion,
             train_loader.cycle(),
@@ -245,7 +240,7 @@ if __name__ == "__main__":
             worst_fitness=3,
             device=DEVICE,
         )
-        train_via_des(model, des_optim, DEVICE, test_dataset, MODEL_NAME)
+        train_via_ndes(model, ndes_optim, DEVICE, test_dataset, MODEL_NAME)
     else:
         early_stop_callback = EarlyStopping(
             monitor="val_loss", min_delta=0.00, patience=3, verbose=False, mode="min"

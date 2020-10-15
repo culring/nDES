@@ -7,16 +7,16 @@ from sklearn.model_selection import StratifiedKFold, train_test_split
 import numpy as np
 from math import ceil
 
-from des_torch import DESOptimizer
-from utils import bootstrap, train_via_des, train_via_gradient, seed_everything
+from ndes import NDESOptimizer
+from utils import bootstrap, train_via_ndes, train_via_gradient, seed_everything
 
 #  EPOCHS = 25000
 EPOCHS = 4 * 1200000
-DES_TRAINING = False
+NDES_TRAINING = False
 #  DEVICE = torch.device("cpu")
 DEVICE = torch.device("cuda:0")
 BOOTSTRAP_BATCHES = None
-MODEL_NAME = "fashion_des.pth.tar"
+MODEL_NAME = "fashion_ndes.pth.tar"
 LOAD_WEIGHTS = False
 SEED_OFFSET = 0
 BATCH_SIZE = 64
@@ -128,8 +128,8 @@ if __name__ == "__main__":
         torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=False)
     )
 
-    if DES_TRAINING:
-        des_optim = DESOptimizer(
+    if NDES_TRAINING:
+        ndes_optim = NDESOptimizer(
             model,
             criterion,
             #  x_train,
@@ -155,7 +155,7 @@ if __name__ == "__main__":
             device=DEVICE,
         )
         #  train_via_des(model, des_optim, DEVICE, test_dataset, 'des_' + MODEL_NAME)
-        train_via_des(model, des_optim, DEVICE, test_dataset, MODEL_NAME)
+        train_via_ndes(model, ndes_optim, DEVICE, test_dataset, MODEL_NAME)
     else:
         #  train_via_gradient(
         #  model, criterion, optimizer, train_dataset, test_dataset, EPOCHS, DEVICE
