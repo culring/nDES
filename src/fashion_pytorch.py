@@ -214,7 +214,7 @@ if __name__ == "__main__":
                 verbose=False,
                 mode="min",
             )
-            trainer = Trainer(gpus=1, early_stop_callback=early_stop_callback)
+            trainer = Trainer(gpus=1, callbacks=[early_stop_callback])
             trainer.fit(model)
             trainer.test(model)
         print(f"Num params: {sum([param.nelement() for param in model.parameters()])}")

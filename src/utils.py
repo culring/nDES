@@ -1,9 +1,11 @@
-import torch
-from torchvision import datasets, transforms
-import torch.nn.functional as F
-import torch.nn as nn
 import random
+
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from gpu_utils import bounce_back_boundary_2d as bounce_back_boundary_2d_cuda
 
 
 def seed_everything(offset=0):
@@ -95,7 +97,7 @@ def test(model, device, test_loader):
             100.0 * correct / len(test_loader.dataset),
         )
     )
-    return test_loss, 100.0 * correct / len(test_loader.dataset),
+    return (test_loss, 100.0 * correct / len(test_loader.dataset))
 
 
 def train_via_des(model, des, device, test_dataset, model_name):
@@ -123,3 +125,33 @@ def train_via_gradient(
     for epoch in range(1, num_epoch + 1):
         train(model, device, train_loader, optimizer, epoch)
         test(model, device, test_loader)
+
+
+# @profile
+def bounce_back_boundary_1d(x, lower, upper):
+    """TODO
+
+    Examples:
+    >>> a = torch.tensor([-2429.4529, 10, 580.3583, -10, 1316.1814, 0, 0])
+    >>> lower = torch.ones(7) * -2000
+    >>> upper = torch.ones(7) * 500
+    >>> bounce_back_boundary_1d(a, lower, upper)
+    tensor([-1570.5471,    10.0000,   419.6417,   -10.0000,  -316.1814,
+    0.0000, 0.0000])
+    """
+    is_lower_boundary_ok = x >= lower
+    is_upper_boundary_ok = x <= upper
+    if is_lower_boundary_ok.all() and is_upper_boundary_ok.all():
+        return x
+    delta = upper - lower
+    x = torch.where(is_lower_boundary_ok, x, lower + ((lower - x) % delta))
+    x = torch.where(is_upper_boundary_ok, x, upper - (((upper - x) * -1) % delta))
+    return x
+
+
+# @profile
+def bounce_back_boundary_2d(x, lower, upper):
+    lower = lower[0]
+    upper = upper[0]
+    delta = upper - lower
+    return bounce_back_boundary_2d_cuda(x, lower, upper, delta)
