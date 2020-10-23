@@ -32,7 +32,7 @@ class UniformPopulationInitializer:
 
         self.uniform = Uniform(-self.xavier_coeffs.cpu(), self.xavier_coeffs.cpu())
 
-    def get_new_population(self, _lower, _upper):
+    def get_new_population(self, lower, upper):
         return self.uniform.sample((self.lambda_,)).transpose(0, 1).to(self.device)
 
 
@@ -42,10 +42,10 @@ class StartFromUniformPopulationInitializer:
         self.uniform = UniformPopulationInitializer(*args)
         self.xavier_mvn = None
 
-    def get_new_population(self):
+    def get_new_population(self, lower, upper):
         # first iteration - start from uniform
         if self.uniform is not None:
-            population = self.uniform.get_new_population()
+            population = self.uniform.get_new_population(lower, upper)
             del self.uniform
             self.uniform = None
             return population
@@ -53,4 +53,4 @@ class StartFromUniformPopulationInitializer:
         elif self.xavier_mvn is None:
             self.xavier_mvn = XavierMVNPopulationInitializer(*self.args)
         # consecutive iterations
-        return self.xavier_mvn.get_new_population()
+        return self.xavier_mvn.get_new_population(lower, upper)

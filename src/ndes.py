@@ -97,7 +97,7 @@ class NDESOptimizer:
                 xavier_coeffs.extend([sqrt(6 / (fan_in + fan_out))] * len(tmp))
             else:
                 xavier_coeffs.extend([xavier_coeffs[-1]] * len(tmp))
-        self.best_value = torch.cat(tensors, 0)
+        self.best_value = torch.cat(tensors, 0).contiguous()
         self.xavier_coeffs = torch.tensor(xavier_coeffs)
 
     def initialize_ewma(self):
@@ -399,6 +399,8 @@ class NDES:
         assert len(self.lower) == self.problem_size
         assert (self.lower < self.upper).all()
 
+        print(f"Running nDES for a problem of size {self.problem_size}")
+
         # The best fitness found so far
         self.best_fit = self.worst_fitness
         # The best solution found so far
@@ -444,7 +446,9 @@ class NDES:
             torch.cuda.empty_cache()
             cum_mean = (self.upper + self.lower) / 2
 
-            population = self.population_initializer.get_new_population(lower=self.lower, upper=self.upper)
+            population = self.population_initializer.get_new_population(
+                lower=self.lower, upper=self.upper
+            ).contiguous()
 
             #  start = timer()
             fitness = self._fitness_lamarckian(population)
@@ -549,6 +553,7 @@ class NDES:
                 iter_log["best_fitness"] = fitness[wb].item()
                 iter_log["mean_fitness"] = fitness.clamp(0, 2.5).mean().item()
                 iter_log["iter"] = self.iter_
+                self.best_par = population[:, wb]
 
                 # Check worst fit
                 ww = fitness.argmax()
