@@ -68,6 +68,7 @@ class BasenDESOptimizer:
         use_fitness_ewma=False,
         population_initializer=XavierMVNPopulationInitializer,
         restarts=None,
+        lr=1e-3,
         **kwargs,
     ):
         """
@@ -79,6 +80,7 @@ class BasenDESOptimizer:
             y_val: Validation ground truth
             use_fitness_ewma: is ``True`` will use EWMA fitness loss tracker
             population_initializer: Class of the population initialization strategy
+            lr: Learning rate, only used if secondary_mutation is set to gradient
             restarts: Optional number of NDES's restarts.
             **kwargs: Keyword arguments for NDES optimizer
         """
@@ -97,6 +99,8 @@ class BasenDESOptimizer:
             self.kwargs["budget"] //= restarts
         self.initial_value = self.zip_layers(model.parameters())
         self.xavier_coeffs = self.calculate_xavier_coefficients(model.parameters())
+        self.secondary_mutation = kwargs.get("secondary_mutation", None)
+        self.lr = lr
         if use_fitness_ewma:
             self.ewma_logger = FitnessEWMALogger(data_gen, model, criterion)
             self.kwargs["iter_callback"] = self.ewma_logger.update_after_iteration
@@ -150,8 +154,22 @@ class BasenDESOptimizer:
         """Custom objective function for the DES optimizer."""
         self._reweight_model(weights)
         batch_idx, (b_x, y) = next(self.data_gen)
-        out = self.model(b_x)
-        loss = self.criterion(out, y).item()
+        if self.secondary_mutation == SecondaryMutation.Gradient:
+            gradient = []
+            with torch.enable_grad():
+                self.model.zero_grad()
+                out = self.model(b_x)
+                loss = self.criterion(out, y)
+                loss.backward()
+                for param in self.model.parameters():
+                    gradient.append(param.grad.flatten())
+                gradient = torch.cat(gradient, 0)
+                # In-place mutation of the weights
+                weights -= self.lr * gradient
+        else:
+            out = self.model(b_x)
+            loss = self.criterion(out, y)
+        loss = loss.item()
         if self.use_fitness_ewma:
             return self.ewma_logger.update_batch(batch_idx, loss)
         return loss
@@ -166,8 +184,9 @@ class BasenDESOptimizer:
         self.test_func = test_func
         best_value = self.initial_value
         with torch.no_grad():
+            requires_grad = self.secondary_mutation == SecondaryMutation.Gradient
             for param in self.model.parameters():
-                param.requires_grad = False
+                param.requires_grad = requires_grad
             population_initializer_args = [
                 self.xavier_coeffs,
                 self.kwargs["device"],
