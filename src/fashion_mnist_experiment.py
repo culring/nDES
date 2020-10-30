@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from torchvision import datasets, transforms
 
 from ndes_optimizer import BasenDESOptimizer
+from ndes import SecondaryMutation
 from utils import seed_everything, train_via_ndes
 
 #  EPOCHS = 25000
@@ -21,7 +22,7 @@ EPOCHS = int(POPULATION * 1200)
 NDES_TRAINING = True
 
 DEVICE = torch.device("cuda:0")
-BOOTSTRAP_BATCHES = True
+BOOTSTRAP = True
 MODEL_NAME = "fashion_ndes_bootstrapped"
 LOAD_WEIGHTS = False
 SEED_OFFSET = 0
@@ -207,7 +208,7 @@ if __name__ == "__main__":
 
         print(y_train.unique(return_counts=True))
 
-        if BOOTSTRAP_BATCHES is not None:
+        if BOOTSTRAP:
             early_stop_callback = EarlyStopping(
                 monitor="val_loss",
                 min_delta=0.00,
@@ -231,6 +232,8 @@ if __name__ == "__main__":
             x_val=x_val,
             y_val=y_val,
             restarts=None,
+            lr=1,
+            secondary_mutation=SecondaryMutation.Gradient,
             Ft=1,
             ccum=0.96,
             # cp=0.1,
