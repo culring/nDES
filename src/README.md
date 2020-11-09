@@ -4,7 +4,8 @@
 
 ### Prerequisites
 * Cuda toolkit v10.2 with a corresponding driver
-* `nvcc` in your $PATH
+* `nvcc` in your `$PATH`
+* Properly set `$CUDA_HOME`
 
 ### Python libraries
 Install them via [`poetry`](https://python-poetry.org/):

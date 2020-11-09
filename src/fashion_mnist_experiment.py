@@ -241,7 +241,6 @@ if __name__ == "__main__":
             upper=2.0,
             budget=EPOCHS,
             tol=1e-6,
-            nn_train=True,
             lambda_=POPULATION,
             history=16,
             worst_fitness=3,

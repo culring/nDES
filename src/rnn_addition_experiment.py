@@ -88,7 +88,6 @@ def test_ndes(sequence_length):
         data_gen=data_generator,
         budget=1000000,
         history=16,
-        nn_train=True,
         lower=-2,
         upper=2,
         tol=1e-6,
