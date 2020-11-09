@@ -10,7 +10,7 @@ import pandas as pd
 import torch
 
 from gpu_utils import create_sorted_weights_for_matmul, fitness_nonlamarckian
-from utils import bounce_back_boundary_1d, bounce_back_boundary_2d
+from utils import bounce_back_boundary_1d, bounce_back_boundary_2d, create_directory
 
 
 class SecondaryMutation(Enum):
@@ -97,6 +97,7 @@ class NDES:
         self.test_func = kwargs.get("test_func", None)
         self.iter_callback = kwargs.get("iter_callback", None)
         self.log_dir = kwargs.get("log_dir", ".")
+        create_directory(self.log_dir)
         self.secondary_mutation = kwargs.get("secondary_mutation", None)
 
     # @profile
@@ -343,9 +344,11 @@ class NDES:
 
                 wb = fitness.argmin()
                 print(f"best fitness: {fitness[wb]}")
-                print(f"mean fitness: {fitness.clamp(0, 2.5).mean()}")
+                print(f"mean fitness: {fitness.clamp(0, self.worst_fitness).mean()}")
                 iter_log["best_fitness"] = fitness[wb].item()
-                iter_log["mean_fitness"] = fitness.clamp(0, 2.5).mean().item()
+                iter_log["mean_fitness"] = (
+                    fitness.clamp(0, self.worst_fitness).mean().item()
+                )
                 iter_log["iter"] = self.iter_
 
                 if self.test_func is None and fitness[wb] < self.best_fitness:
