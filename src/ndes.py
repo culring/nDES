@@ -34,6 +34,7 @@ class NDES:
         self.upper = upper
 
         self.device = kwargs.get("device", torch.device("cpu"))
+        self.devices = kwargs.get("devices", self.device)
         self.dtype = kwargs.get("dtype", torch.float32)
         self.population_initializer = population_initializer
 
@@ -110,7 +111,6 @@ class NDES:
 
     # @profile
     def _fitness_lamarckian(self, x):
-        print(x, x.shape)
         if np.isscalar(x):
             if self.count_eval < self.budget:
                 return self._fitness_wrapper(x)
