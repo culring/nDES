@@ -86,7 +86,8 @@ def test_ndes(sequence_length):
         model=net,
         criterion=cost_function,
         data_gen=data_generator,
-        budget=1000000,
+        # budget=1000000,
+        budget=2000,
         history=16,
         nn_train=True,
         lower=-2,
@@ -131,5 +132,5 @@ def test_adam(sequence_length):
 if __name__ == "__main__":
     sequence_length, device = parse_args()
     DEVICE = device
-    #  test_adam(sequence_length)
+    # test_adam(sequence_length)
     test_ndes(sequence_length)

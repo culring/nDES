@@ -4,6 +4,7 @@ import gc
 from enum import Enum
 from math import floor, log, sqrt
 from timeit import default_timer as timer
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -97,6 +98,7 @@ class NDES:
         self.test_func = kwargs.get("test_func", None)
         self.iter_callback = kwargs.get("iter_callback", None)
         self.log_dir = kwargs.get("log_dir", ".")
+        Path(self.log_dir).mkdir(parents=True, exist_ok=True)
         self.secondary_mutation = kwargs.get("secondary_mutation", None)
 
     # @profile
@@ -108,6 +110,7 @@ class NDES:
 
     # @profile
     def _fitness_lamarckian(self, x):
+        print(x, x.shape)
         if np.isscalar(x):
             if self.count_eval < self.budget:
                 return self._fitness_wrapper(x)
@@ -213,7 +216,7 @@ class NDES:
                 "iter",
             ]
         )
-        #  evaluation_times = []
+        evaluation_times = []
         while self.count_eval < self.budget:  # and self.iter_ < self.max_iter:
 
             hist_head = -1
@@ -238,10 +241,10 @@ class NDES:
             if self.lamarckism:
                 population = bounce_back_boundary_2d(population, self.lower, self.upper)
 
-            #  start = timer()
+            start = timer()
             fitness = self._fitness_lamarckian(population)
-            #  end = timer()
-            #  evaluation_times.append(end - start)
+            end = timer()
+            evaluation_times.append(end - start)
 
             new_mean = torch.empty_like(self.initial_value)
             new_mean.copy_(self.initial_value)
@@ -332,10 +335,10 @@ class NDES:
                 torch.cuda.empty_cache()
 
                 # Evaluation
-                #  start = timer()
+                start = timer()
                 fitness = self._fitness_lamarckian(population)
-                #  end = timer()
-                #  evaluation_times.append(end - start)
+                end = timer()
+                evaluation_times.append(end - start)
                 if not self.lamarckism:
                     fitness_non_lamarckian = self._fitness_non_lamarckian(
                         population, fitness
@@ -402,5 +405,8 @@ class NDES:
                     self.iter_callback()
 
         log_.to_csv(f"ndes_log_{self.start}.csv")
-        #  np.save(f"times_{self.problem_size}.npy", np.array(evaluation_times))
+        print(evaluation_times)
+        print(len(evaluation_times))
+        print(np.mean(evaluation_times))
+        # np.save(f"times_{self.problem_size}.npy", np.array(evaluation_times))
         return self.best_solution  # , log_
