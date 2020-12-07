@@ -103,10 +103,12 @@ class NDES:
         self.secondary_mutation = kwargs.get("secondary_mutation", None)
 
     # @profile
-    def _fitness_wrapper(self, x):
+    def _fitness_wrapper(self, x, device):
         if (x >= self.lower).all() and (x <= self.upper).all():
             self.count_eval += 1
-            return self.fn(x)
+            x_distributed = torch.empty_like(x, device=device)
+            x_distributed.copy_(x)
+            return self.fn(x_distributed)
         return self.worst_fitness
 
     # @profile
@@ -121,13 +123,15 @@ class NDES:
         if self.count_eval + cols <= self.budget:
             if cols > 1:
                 for i in range(cols):
-                    fitnesses.append(self._fitness_wrapper(x[:, i]))
+                    current_device = i%len(self.devices)
+                    fitnesses.append(self._fitness_wrapper(x[:, i], self.devices[current_device]))
                 return torch.tensor(fitnesses, device=self.device, dtype=self.dtype)
-            return self._fitness_wrapper(x)
+            return self._fitness_wrapper(x, self.device)
 
         budget_left = self.budget - self.count_eval
         for i in range(budget_left):
-            fitnesses.append(self._fitness_wrapper(x[:, i]))
+            current_device = i%len(self.devices)
+            fitnesses.append(self._fitness_wrapper(x[:, i], self.devices[current_device]))
         if not fitnesses and cols == 1:
             return self.worst_fitness
         return torch.tensor(
