@@ -1,3 +1,4 @@
+import random
 from random import randint
 from timeit import default_timer as timer
 
@@ -43,17 +44,18 @@ class Net(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=0.01)
 
 
-def dataset_generator(num_samples, min_sample_length):
+def dataset_generator(num_samples, min_sample_length, deterministic=False):
+    seed = 0 if deterministic else None
     dataset = []
     gts = []
     max_sample_length = min_sample_length + int(min_sample_length / 10)
     sizes = (
-        np.random.default_rng()
+        np.random.default_rng(seed)
         .uniform(min_sample_length, max_sample_length, num_samples)
         .astype(int)
     )
     for size in sizes:
-        values = np.random.default_rng().uniform(-1, 1, size)
+        values = np.random.default_rng(seed).uniform(-1, 1, size)
         x1_index = randint(0, min(10, size - 1))
         x2_index = x1_index
         while x2_index == x1_index:
@@ -95,6 +97,7 @@ def test_ndes(sequence_length):
         tol=1e-6,
         worst_fitness=3,
         device=DEVICE,
+        devices=[torch.device("cuda:0")],
         log_dir=f"rnn_addition_{sequence_length}",
     )
 

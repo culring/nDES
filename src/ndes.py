@@ -34,7 +34,7 @@ class NDES:
         self.upper = upper
 
         self.device = kwargs.get("device", torch.device("cpu"))
-        self.devices = kwargs.get("devices", self.device)
+        self.devices = kwargs.get("devices", [self.device])
         self.dtype = kwargs.get("dtype", torch.float32)
         self.population_initializer = population_initializer
 
@@ -409,8 +409,8 @@ class NDES:
                     self.iter_callback()
 
         log_.to_csv(f"ndes_log_{self.start}.csv")
-        print(evaluation_times)
-        print(len(evaluation_times))
-        print(np.mean(evaluation_times))
+        # print(evaluation_times)
+        # print(len(evaluation_times))
+        # print(np.mean(evaluation_times))
         # np.save(f"times_{self.problem_size}.npy", np.array(evaluation_times))
         return self.best_solution  # , log_
