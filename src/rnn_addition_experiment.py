@@ -80,7 +80,7 @@ def test_ndes(sequence_length):
         *dataset_generator(5000, sequence_length), DEVICE
     )
 
-    net = Net().to(DEVICE)
+    # net = Net().to(DEVICE)
 
     cost_function = F.mse_loss
 

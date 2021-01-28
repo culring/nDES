@@ -101,9 +101,28 @@ class BasenDESOptimizer:
         self.xavier_coeffs = self.calculate_xavier_coefficients(model.parameters())
         self.secondary_mutation = kwargs.get("secondary_mutation", None)
         self.lr = lr
+        self.devices = kwargs.get("devices")
+        self.init_devices_data()
         if use_fitness_ewma:
             self.ewma_logger = FitnessEWMALogger(data_gen, model, criterion)
             self.kwargs["iter_callback"] = self.ewma_logger.update_after_iteration
+
+    def init_devices_data(self):
+        self.load_batches()
+        self.load_models()
+
+    def load_batches(self):
+        batch_idx, (b_x, y) = next(self.data_gen)
+        self.device_to_b_x = dict()
+        self.device_to_y = dict()
+        for device in self.devices:
+            self.device_to_b_x[str(device)] = b_x.to(device)
+            self.device_to_y[str(device)] = y.to(device)
+
+    def load_models(self):
+        self.device_to_model = dict()
+        for device in self.devices:
+            self.device_to_model[str(device)] = self.model.to(device)
 
     def zip_layers(self, layers_iter):
         """Concatenate flattened layers into a single 1-D tensor.
@@ -148,6 +167,64 @@ class BasenDESOptimizer:
         for offset, shape in self._layers_offsets_shapes:
             yield zipped_layers[start:offset].view(shape)
             start = offset
+
+    def _objective_function_population(self, population):
+        models_weights = []
+        for i in range(population.shape[1]):
+            weights = population[:, i]
+            unzipped_layers = list(self.unzip_layers(weights))
+            models_weights.append(unzipped_layers)
+        self.device_to_models_weights = dict()
+        for device in self.devices:
+            models_weights_device = []
+            for weights in models_weights:
+                weights_device = []
+                for layer in weights:
+                    layer_device = layer.to(device)
+                    weights_device.append(layer_device)
+                models_weights_device.append(weights_device)
+            self.device_to_models_weights[str(device)] = models_weights_device
+        fitnesses_per_device = []
+        for device in self.devices:
+            fitnesses_per_device.append(self._make_inference_for_device(device))
+        return fitnesses_per_device[0]
+
+    def _make_inference_for_device(self, device):
+        models_weights = self.device_to_models_weights[str(device)]
+        model = self.device_to_model[str(device)]
+        model.to(device)
+        # print(model)
+        batch_idx = 0
+        b_x = self.device_to_b_x[str(device)]
+        y = self.device_to_y[str(device)]
+        losses = []
+        for weights in models_weights:
+            self._reweight_model_2(model, weights)
+            if self.secondary_mutation == SecondaryMutation.Gradient:
+                gradient = []
+                with torch.enable_grad():
+                    model.zero_grad()
+                    out = model(b_x)
+                    loss = self.criterion(out, y)
+                    loss.backward()
+                    for param in model.parameters():
+                        gradient.append(param.grad.flatten())
+                    gradient = torch.cat(gradient, 0)
+                    # In-place mutation of the weights
+                    weights -= self.lr * gradient
+            else:
+                out = model(b_x)
+                loss = self.criterion(out, y)
+            loss = loss.item()
+            if self.use_fitness_ewma:
+                loss = self.ewma_logger.update_batch(batch_idx, loss)
+            losses.append(loss)
+        return losses
+
+    # @profile
+    def _reweight_model_2(self, model, weights):
+        for param, layer in zip(model.parameters(), weights):
+            param.data.copy_(layer)
 
     # @profile
     def _objective_function(self, weights):
@@ -203,6 +280,7 @@ class BasenDESOptimizer:
                 dict(
                     initial_value=best_value,
                     fn=self._objective_function,
+                    fn_population=self._objective_function_population,
                     xavier_coeffs=self.xavier_coeffs,
                     population_initializer=population_initializer,
                     test_func=test_func,

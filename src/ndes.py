@@ -24,17 +24,17 @@ class NDES:
     """neural Differential Evolution Strategy (nDES) implementation."""
 
     def __init__(
-        self, initial_value, fn, lower, upper, population_initializer, **kwargs
+        self, initial_value, fn, fn_population, lower, upper, population_initializer, **kwargs
     ):
         self.initial_value = torch.empty_like(initial_value)
         self.initial_value.copy_(initial_value)
         self.problem_size = int(len(initial_value))
         self.fn = fn
+        self.fn_population = fn_population
         self.lower = lower
         self.upper = upper
 
         self.device = kwargs.get("device", torch.device("cpu"))
-        self.devices = kwargs.get("devices", [self.device])
         self.dtype = kwargs.get("dtype", torch.float32)
         self.population_initializer = population_initializer
 
@@ -109,6 +109,16 @@ class NDES:
             return self.fn(x)
         return self.worst_fitness
 
+    def _fitness_wrapper_population(self, population, threshold):
+        fitnesses = self.fn_population(population)
+        for i in range(threshold):
+            x = population[:, i]
+            if not((x >= self.lower).all() and (x <= self.upper).all()):
+                fitnesses[i] = self.worst_fitness
+            else:
+                self.count_eval += 1
+        return fitnesses
+
     # @profile
     def _fitness_lamarckian(self, x):
         if np.isscalar(x):
@@ -120,9 +130,11 @@ class NDES:
         fitnesses = []
         if self.count_eval + cols <= self.budget:
             if cols > 1:
-                for i in range(cols):
-                    fitnesses.append(self._fitness_wrapper(x[:, i]))
-                return torch.tensor(fitnesses, device=self.device, dtype=self.dtype)
+                fitnesses = self._fitness_wrapper_population(x, cols)
+                fitnesses_in_budget = fitnesses[:cols]
+                # for i in range(cols):
+                #     fitnesses.append(self._fitness_wrapper(x[:, i]))
+                return torch.tensor(fitnesses_in_budget, device=self.device, dtype=self.dtype)
             return self._fitness_wrapper(x)
 
         budget_left = self.budget - self.count_eval
