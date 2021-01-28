@@ -192,8 +192,6 @@ class BasenDESOptimizer:
     def _make_inference_for_device(self, device):
         models_weights = self.device_to_models_weights[str(device)]
         model = self.device_to_model[str(device)]
-        model.to(device)
-        # print(model)
         batch_idx = 0
         b_x = self.device_to_b_x[str(device)]
         y = self.device_to_y[str(device)]
