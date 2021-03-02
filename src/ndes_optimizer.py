@@ -101,28 +101,28 @@ class BasenDESOptimizer:
         self.xavier_coeffs = self.calculate_xavier_coefficients(model.parameters())
         self.secondary_mutation = kwargs.get("secondary_mutation", None)
         self.lr = lr
-        self.devices = kwargs.get("devices")
-        self.init_devices_data()
+        # self.devices = kwargs.get("devices")
+        # self.init_devices_data()
         if use_fitness_ewma:
             self.ewma_logger = FitnessEWMALogger(data_gen, model, criterion)
             self.kwargs["iter_callback"] = self.ewma_logger.update_after_iteration
 
-    def init_devices_data(self):
-        self.load_batches()
-        self.load_models()
-
-    def load_batches(self):
-        batch_idx, (b_x, y) = next(self.data_gen)
-        self.device_to_b_x = dict()
-        self.device_to_y = dict()
-        for device in self.devices:
-            self.device_to_b_x[str(device)] = b_x.to(device)
-            self.device_to_y[str(device)] = y.to(device)
-
-    def load_models(self):
-        self.device_to_model = dict()
-        for device in self.devices:
-            self.device_to_model[str(device)] = self.model.to(device)
+    # def init_devices_data(self):
+    #     self.load_batches()
+    #     self.load_models()
+    #
+    # def load_batches(self):
+    #     batch_idx, (b_x, y) = next(self.data_gen)
+    #     self.device_to_b_x = dict()
+    #     self.device_to_y = dict()
+    #     for device in self.devices:
+    #         self.device_to_b_x[str(device)] = b_x.to(device)
+    #         self.device_to_y[str(device)] = y.to(device)
+    #
+    # def load_models(self):
+    #     self.device_to_model = dict()
+    #     for device in self.devices:
+    #         self.device_to_model[str(device)] = self.model.to(device)
 
     def zip_layers(self, layers_iter):
         """Concatenate flattened layers into a single 1-D tensor.

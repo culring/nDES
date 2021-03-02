@@ -1,17 +1,16 @@
 import numpy as np
 import random
-from random import randint
 import torch
 import torch.nn.functional as F
 
-from ndes import NDES
+from fashion_mnist_experiment import train as train_mnist
 from ndes_optimizer import RNNnDESOptimizer
 from utils_rnn import DummyDataGenerator
 from rnn_addition_experiment import dataset_generator
 from rnn_addition_experiment import Net
 
 
-def test_ndes():
+def test_ndes_rnn():
     random.seed(0)
     np.random.seed(0)
     torch.manual_seed(0)
@@ -52,5 +51,10 @@ def test_ndes():
     parameter1 = next(parameters).flatten().cpu().numpy()
     assert np.allclose(parameter1, parameter1_expected)
 
-if __name__ == "__main__":
-    test_ndes()
+
+def test_ndes_fashion_mnist():
+    model = train_mnist()
+    print(next(model.parameters()))
+
+# test_ndes_rnn()
+test_ndes_fashion_mnist()

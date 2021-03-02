@@ -17,12 +17,16 @@ from utils import seed_everything, train_via_ndes
 
 #  EPOCHS = 25000
 POPULATION_MULTIPLIER = 8
-POPULATION = int(POPULATION_MULTIPLIER * 4000)
-EPOCHS = int(POPULATION * 1200)
+# POPULATION = int(POPULATION_MULTIPLIER * 4000)
+POPULATION = 800
+EPOCHS = POPULATION * 50
+# EPOCHS = int(POPULATION * 1200)
+# EPOCHS = 2000
 NDES_TRAINING = True
 
 DEVICE = torch.device("cuda:0")
-BOOTSTRAP = True
+# BOOTSTRAP = True
+BOOTSTRAP = False
 MODEL_NAME = "fashion_ndes_bootstrapped"
 LOAD_WEIGHTS = False
 SEED_OFFSET = 0
@@ -178,10 +182,11 @@ class MyDatasetLoader:
         return self.num_batches
 
 
-if __name__ == "__main__":
+def train():
     seed_everything(SEED_OFFSET)
 
     model = Net().to(DEVICE)
+    print(next(model.parameters()))
     if LOAD_WEIGHTS:
         model.load_state_dict(torch.load(MODEL_NAME)["state_dict"])
 
@@ -255,3 +260,9 @@ if __name__ == "__main__":
         trainer = Trainer(gpus=1, early_stop_callback=early_stop_callback)
         trainer.fit(model)
         trainer.test(model)
+
+    return model
+
+
+if __name__ == "__main__":
+    train()

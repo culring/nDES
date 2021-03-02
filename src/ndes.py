@@ -130,11 +130,12 @@ class NDES:
         fitnesses = []
         if self.count_eval + cols <= self.budget:
             if cols > 1:
-                fitnesses = self._fitness_wrapper_population(x, cols)
-                fitnesses_in_budget = fitnesses[:cols]
-                # for i in range(cols):
-                #     fitnesses.append(self._fitness_wrapper(x[:, i]))
-                return torch.tensor(fitnesses_in_budget, device=self.device, dtype=self.dtype)
+                # fitnesses = self._fitness_wrapper_population(x, cols)
+                # fitnesses_in_budget = fitnesses[:cols]
+                for i in range(cols):
+                    fitnesses.append(self._fitness_wrapper(x[:, i]))
+                return torch.tensor(fitnesses, device=self.device, dtype=self.dtype)
+                # return torch.tensor(fitnesses_in_budget, device=self.device, dtype=self.dtype)
             return self._fitness_wrapper(x)
 
         budget_left = self.budget - self.count_eval
