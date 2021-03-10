@@ -23,6 +23,8 @@ def test_ndes():
     data_generator = DummyDataGenerator(
         *dataset_generator(5000, sequence_length, deterministic=True), DEVICE
     )
+    _, batch = next(data_generator)
+    batches = [batch]
 
     net = Net().to(DEVICE)
 
@@ -42,6 +44,7 @@ def test_ndes():
         worst_fitness=3,
         device=DEVICE,
         devices=[torch.device("cuda:0")],
+        batches=batches,
         log_dir=f"rnn_addition_{sequence_length}",
     )
 

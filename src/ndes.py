@@ -109,14 +109,15 @@ class NDES:
             return self.fn(x)
         return self.worst_fitness
 
-    def _fitness_wrapper_population(self, population, threshold):
+    def _fitness_wrapper_population(self, population):
         fitnesses = self.fn_population(population)
-        for i in range(threshold):
+        for i in range(population.shape[1]):
             x = population[:, i]
-            if not((x >= self.lower).all() and (x <= self.upper).all()):
-                fitnesses[i] = self.worst_fitness
-            else:
+            if (x >= self.lower).all() and (x <= self.upper).all():
                 self.count_eval += 1
+            else:
+                fitnesses[i] = self.worst_fitness
+
         return fitnesses
 
     # @profile
@@ -130,16 +131,13 @@ class NDES:
         fitnesses = []
         if self.count_eval + cols <= self.budget:
             if cols > 1:
-                fitnesses = self._fitness_wrapper_population(x, cols)
-                fitnesses_in_budget = fitnesses[:cols]
-                # for i in range(cols):
-                #     fitnesses.append(self._fitness_wrapper(x[:, i]))
-                return torch.tensor(fitnesses_in_budget, device=self.device, dtype=self.dtype)
+                fitnesses = self._fitness_wrapper_population(x)
+                return torch.tensor(fitnesses, device=self.device, dtype=self.dtype)
             return self._fitness_wrapper(x)
 
         budget_left = self.budget - self.count_eval
-        for i in range(budget_left):
-            fitnesses.append(self._fitness_wrapper(x[:, i]))
+        if budget_left > 0:
+            fitnesses = self._fitness_wrapper_population(x[:, :budget_left])
         if not fitnesses and cols == 1:
             return self.worst_fitness
         return torch.tensor(
