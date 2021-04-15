@@ -1,0 +1,12 @@
+name: nDES
+channels:
+  - defaults
+dependencies:
+  - python[version='>=3.6.7,<4.0']
+  - pytorch-lightning
+  - pandas
+  - scikit-learn
+  - pytest
+  - cudatoolkit=10.2
+  - pytorch
+  - cma
