@@ -11,7 +11,43 @@ from rnn_addition_experiment import dataset_generator
 from rnn_addition_experiment import Net
 
 
-def test_ndes():
+def test_one_batch():
+    best_model = _optimize_addition_experiment_model(1)
+    parameters = best_model.parameters()
+    parameter1_expected = np.array(
+        [[-0.03167936, 0.15802976, 0.11570834, -0.28565332, 0.25937796, 0.23147143, -0.30402797, 0.04191783]])
+    parameter1 = next(parameters).flatten().cpu().numpy()
+    assert np.allclose(parameter1, parameter1_expected)
+
+
+def test_multiple_batches_1():
+    best_model = _optimize_addition_experiment_model(2)
+    parameters = best_model.parameters()
+    parameter1_expected = np.array(
+        [[0.20979181, 0.666692, 0.04987898, 0.08414253, 0.04452102, 0.30242744, -0.54285395, -0.11967324]])
+    parameter1 = next(parameters).flatten().cpu().numpy()
+    assert np.allclose(parameter1, parameter1_expected)
+
+
+def test_multiple_batches_2():
+    best_model = _optimize_addition_experiment_model(10)
+    parameters = best_model.parameters()
+    parameter1_expected = np.array(
+        [[0.20142989, 0.16085166, -1.008347, -0.4765443, -0.62992036, 0.53645694, 0.10092552, 1.034528]])
+    parameter1 = next(parameters).flatten().cpu().numpy()
+    assert np.allclose(parameter1, parameter1_expected)
+
+
+def test_multiple_batches_3():
+    best_model = _optimize_addition_experiment_model(50)
+    parameters = best_model.parameters()
+    parameter1_expected = np.array(
+        [[0.13170685, 0.04440612, -0.2721198, -0.46091688, -0.32127187, -0.00898296, 0.01116597, 0.10626985]])
+    parameter1 = next(parameters).flatten().cpu().numpy()
+    assert np.allclose(parameter1, parameter1_expected)
+
+
+def _optimize_addition_experiment_model(n_batches):
     random.seed(0)
     np.random.seed(0)
     torch.manual_seed(0)
@@ -20,11 +56,13 @@ def test_ndes():
     DEVICE = torch.device("cuda:0")
     sequence_length = 20
 
-    data_generator = DummyDataGenerator(
-        *dataset_generator(5000, sequence_length, deterministic=True), DEVICE
-    )
-    _, batch = next(data_generator)
-    batches = [batch]
+    batches = []
+    for i in range(n_batches):
+        data_generator = DummyDataGenerator(
+            *dataset_generator(500, sequence_length, seed=i), DEVICE
+        )
+        _, batch = next(data_generator)
+        batches.append(batch)
 
     net = Net().to(DEVICE)
 
@@ -48,12 +86,10 @@ def test_ndes():
         log_dir=f"rnn_addition_{sequence_length}",
     )
 
-    best = ndes.run()
+    best_model = ndes.run()
 
-    parameters = best.parameters()
-    parameter1_expected = np.array([-0.18890078, -0.05024691, 0.0426968, -0.02934495, -0.070004, 0.05936356, 0.2720328,  -0.32246602])
-    parameter1 = next(parameters).flatten().cpu().numpy()
-    assert np.allclose(parameter1, parameter1_expected)
+    return best_model
+
 
 if __name__ == "__main__":
-    test_ndes()
+    pass

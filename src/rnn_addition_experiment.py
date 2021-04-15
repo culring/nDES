@@ -44,8 +44,7 @@ class Net(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=0.01)
 
 
-def dataset_generator(num_samples, min_sample_length, deterministic=False):
-    seed = 0 if deterministic else None
+def dataset_generator(num_samples, min_sample_length, seed=0):
     dataset = []
     gts = []
     max_sample_length = min_sample_length + int(min_sample_length / 10)
