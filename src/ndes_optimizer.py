@@ -69,6 +69,7 @@ class BasenDESOptimizer:
         population_initializer=XavierMVNPopulationInitializer,
         restarts=None,
         lr=1e-3,
+        models=None,
         **kwargs,
     ):
         """
@@ -105,15 +106,12 @@ class BasenDESOptimizer:
         self.num_devices = len(self.devices)
         self.batches = kwargs.get("batches")
         self.num_batches = len(self.batches)
+        self.device_to_model = models
         self.batch_idx = 0
-        self.init_devices_data()
+        self.load_batches()
         if use_fitness_ewma:
             self.ewma_logger = FitnessEWMALogger(data_gen, model, criterion)
             self.kwargs["iter_callback"] = self.ewma_logger.update_after_iteration
-
-    def init_devices_data(self):
-        self.load_batches()
-        self.load_models()
 
     def load_batches(self):
         self.device_to_batches = dict()
@@ -123,11 +121,6 @@ class BasenDESOptimizer:
                 batch_device = batch[0].to(device), batch[1].to(device)
                 batches_device.append(batch_device)
             self.device_to_batches[str(device)] = batches_device
-
-    def load_models(self):
-        self.device_to_model = dict()
-        for device in self.devices:
-            self.device_to_model[str(device)] = self.model.to(device)
 
     def zip_layers(self, layers_iter):
         """Concatenate flattened layers into a single 1-D tensor.

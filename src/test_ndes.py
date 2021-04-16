@@ -48,12 +48,9 @@ def test_multiple_batches_3():
 
 
 def _optimize_addition_experiment_model(n_batches):
-    random.seed(0)
-    np.random.seed(0)
-    torch.manual_seed(0)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    _seed_everything()
     DEVICE = torch.device("cuda:0")
+    devices = [torch.device("cuda:0")]
     sequence_length = 20
 
     batches = []
@@ -65,6 +62,11 @@ def _optimize_addition_experiment_model(n_batches):
         batches.append(batch)
 
     net = Net().to(DEVICE)
+    state = torch.get_rng_state()
+    models = dict()
+    for device in devices:
+        models[str(device)] = Net().to(device)
+    torch.set_rng_state(state)
 
     cost_function = F.mse_loss
 
@@ -84,11 +86,20 @@ def _optimize_addition_experiment_model(n_batches):
         devices=[torch.device("cuda:0")],
         batches=batches,
         log_dir=f"rnn_addition_{sequence_length}",
+        models=models
     )
 
     best_model = ndes.run()
 
     return best_model
+
+
+def _seed_everything():
+    random.seed(0)
+    np.random.seed(0)
+    torch.manual_seed(0)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 if __name__ == "__main__":
