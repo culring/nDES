@@ -107,8 +107,9 @@ class BasenDESOptimizer:
         self.batches = kwargs.get("batches")
         self.num_batches = len(self.batches)
         self.device_to_model = models
+        self.device_to_batches = kwargs.get("device_to_batches")
         self.batch_idx = 0
-        self.load_batches()
+        # self.load_batches()
         if use_fitness_ewma:
             self.ewma_logger = FitnessEWMALogger(data_gen, model, criterion)
             self.kwargs["iter_callback"] = self.ewma_logger.update_after_iteration
@@ -170,7 +171,7 @@ class BasenDESOptimizer:
         individual_idx = 0
         population_size = population.shape[1]
         individuals_per_device = population_size // self.num_devices
-        surplus = population_size - individuals_per_device
+        surplus = population_size - self.num_devices * individuals_per_device
         fitnesses_total = []
         for i, device in enumerate(self.devices):
             individuals = individuals_per_device if surplus <= 0 else individuals_per_device + 1

@@ -3,6 +3,7 @@ import random
 from random import randint
 import torch
 import torch.nn.functional as F
+from timeit import default_timer as timer
 
 from ndes import NDES
 from ndes_optimizer import RNNnDESOptimizer
@@ -30,7 +31,10 @@ def test_multiple_batches_1():
 
 
 def test_multiple_batches_2():
+    start = timer()
     best_model = _optimize_addition_experiment_model(10)
+    end = timer()
+    print(end-start)
     parameters = best_model.parameters()
     parameter1_expected = np.array(
         [[0.20142989, 0.16085166, -1.008347, -0.4765443, -0.62992036, 0.53645694, 0.10092552, 1.034528]])
@@ -50,16 +54,23 @@ def test_multiple_batches_3():
 def _optimize_addition_experiment_model(n_batches):
     _seed_everything()
     DEVICE = torch.device("cuda:0")
-    devices = [torch.device("cuda:0")]
+    if N_DEVICES == 2:
+        devices = [torch.device("cuda:0"), torch.device("cuda:1")]
+    elif N_DEVICES == 1:
+        devices = [torch.device("cuda:0")]
     sequence_length = 20
 
-    batches = []
-    for i in range(n_batches):
-        data_generator = DummyDataGenerator(
-            *dataset_generator(500, sequence_length, seed=i), DEVICE
-        )
-        _, batch = next(data_generator)
-        batches.append(batch)
+    device_to_batches = {}
+    for i in range(N_DEVICES):
+        batches = []
+        device = torch.device(f"cuda:{i}")
+        for i in range(n_batches):
+            data_generator = DummyDataGenerator(
+                *dataset_generator(500, sequence_length, seed=i), device
+            )
+            _, batch = next(data_generator)
+            batches.append(batch)
+        device_to_batches[str(device)] = batches
 
     net = Net().to(DEVICE)
     state = torch.get_rng_state()
@@ -74,8 +85,8 @@ def _optimize_addition_experiment_model(n_batches):
         model=net,
         criterion=cost_function,
         data_gen=data_generator,
-        # budget=1000000,
-        budget=1000,
+        budget=10000,
+        #budget=1000,
         history=16,
         nn_train=True,
         lower=-2,
@@ -83,10 +94,12 @@ def _optimize_addition_experiment_model(n_batches):
         tol=1e-6,
         worst_fitness=3,
         device=DEVICE,
-        devices=[torch.device("cuda:0")],
+        devices=devices,
         batches=batches,
         log_dir=f"rnn_addition_{sequence_length}",
-        models=models
+        models=models,
+	lambda_=4,
+        device_to_batches=device_to_batches
     )
 
     best_model = ndes.run()
@@ -103,4 +116,6 @@ def _seed_everything():
 
 
 if __name__ == "__main__":
-    pass
+    global N_DEVICES
+    N_DEVICES = 2
+    test_multiple_batches_2()

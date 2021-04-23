@@ -30,7 +30,8 @@ class Net(pl.LightningModule):
         lens_unpacked -= 1
         lens = lens_unpacked.unsqueeze(-1)
         indices = lens.repeat(1, 4)
-        self.indices = indices.unsqueeze(1).to(DEVICE)
+        self.indices = indices.unsqueeze(1)
+        self.indices.type_as(indices)
         out = torch.gather(seq_unpacked, 1, self.indices)
         return self.output(out).flatten()
 
@@ -44,7 +45,7 @@ class Net(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=0.01)
 
 
-def dataset_generator(num_samples, min_sample_length, seed=0):
+def dataset_generator(num_samples, min_sample_length, seed=0, device=DEVICE):
     dataset = []
     gts = []
     max_sample_length = min_sample_length + int(min_sample_length / 10)
@@ -69,9 +70,9 @@ def dataset_generator(num_samples, min_sample_length, seed=0):
         x1 = values[x1_index] if x1_index != 0 else 0
         x2 = values[x2_index] if x2_index != 0 else 0
         gt = 0.5 + ((x1 + x2) / 4)
-        dataset.append(torch.tensor((values, mask)).permute(1, 0).float().to(DEVICE))
+        dataset.append(torch.tensor((values, mask)).permute(1, 0).float().to(device))
         gts.append(gt)
-    return dataset, sizes.tolist(), torch.tensor(gts).float().to(DEVICE)
+    return dataset, sizes.tolist(), torch.tensor(gts).float().to(device)
 
 
 def test_ndes(sequence_length):

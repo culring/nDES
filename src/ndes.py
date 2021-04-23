@@ -310,8 +310,8 @@ class NDES:
                         self.mu * self.cp * (2 - self.cp)
                     ) * step
 
-                print(f"|step|={(step**2).sum().item()}")
-                print(f"|pc|={(pc**2).sum().item()}")
+                #print(f"|step|={(step**2).sum().item()}")
+                #print(f"|pc|={(pc**2).sum().item()}")
                 iter_log["step"] = (step ** 2).sum().item()
                 iter_log["pc"] = (pc ** 2).sum().item()
 
@@ -347,16 +347,19 @@ class NDES:
                 # Evaluation
                 start = timer()
                 fitness = self._fitness_lamarckian(population)
+                torch.cuda.synchronize(device=torch.device("cuda:0"))
+                torch.cuda.synchronize(device=torch.device("cuda:1"))
                 end = timer()
                 evaluation_times.append(end - start)
+                print(f'time of population evaluation: {end-start}')
                 if not self.lamarckism:
                     fitness_non_lamarckian = self._fitness_non_lamarckian(
                         population, fitness
                     )
 
                 wb = fitness.argmin()
-                print(f"best fitness: {fitness[wb]}")
-                print(f"mean fitness: {fitness.clamp(0, 2.5).mean()}")
+                #print(f"best fitness: {fitness[wb]}")
+                #print(f"mean fitness: {fitness.clamp(0, 2.5).mean()}")
                 iter_log["best_fitness"] = fitness[wb].item()
                 iter_log["mean_fitness"] = fitness.clamp(0, 2.5).mean().item()
                 iter_log["iter"] = self.iter_
@@ -381,7 +384,7 @@ class NDES:
                 )
 
                 fn_cum = self._fitness_lamarckian(cum_mean_repaired)
-                print(f"fn_cum: {fn_cum}")
+                # print(f"fn_cum: {fn_cum}")
                 iter_log["fn_cum"] = fn_cum
 
                 if self.test_func is None and fn_cum < self.best_fitness:
@@ -396,7 +399,7 @@ class NDES:
                     and self.count_eval < 0.8 * self.budget
                 ):
                     stoptol = True
-                print(f"iter={self.iter_}")
+                #print(f"iter={self.iter_}")
                 iter_log["best_found"] = self.best_fitness
                 if self.iter_ % 50 == 0 and self.test_func is not None:
                     (test_loss, test_acc), self.best_solution = self.test_func(
@@ -415,8 +418,8 @@ class NDES:
                     self.iter_callback()
 
         log_.to_csv(f"ndes_log_{self.start}.csv")
-        # print(evaluation_times)
+        print(evaluation_times)
         # print(len(evaluation_times))
-        # print(np.mean(evaluation_times))
+        print(np.mean(evaluation_times))
         # np.save(f"times_{self.problem_size}.npy", np.array(evaluation_times))
         return self.best_solution  # , log_
