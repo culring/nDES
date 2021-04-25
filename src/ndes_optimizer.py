@@ -109,6 +109,7 @@ class BasenDESOptimizer:
         self.device_to_model = models
         self.device_to_batches = kwargs.get("device_to_batches")
         self.batch_idx = 0
+        self.population_step = kwargs.get("population_step", 2)
         # self.load_batches()
         if use_fitness_ewma:
             self.ewma_logger = FitnessEWMALogger(data_gen, model, criterion)
@@ -167,23 +168,44 @@ class BasenDESOptimizer:
             yield zipped_layers[start:offset].view(shape)
             start = offset
 
+    # def _objective_function_population(self, population):
+    #     individual_idx = 0
+    #     population_size = population.shape[1]
+    #     individuals_per_device = population_size // self.num_devices
+    #     surplus = population_size - self.num_devices * individuals_per_device
+    #     fitnesses_total = []
+    #     population_devices = []
+    #     for device in self.devices:
+    #         population_devices.append(population.to(device))
+    #     for i, device in enumerate(self.devices):
+    #         individuals = individuals_per_device if surplus <= 0 else individuals_per_device + 1
+    #         population_device = population_devices[i]
+    #         fitnesses = self._evaluate_individuals(device, population_device, individual_idx, individual_idx + individuals - 1, self.batch_idx)
+    #         fitnesses_total.extend(fitnesses)
+    #         individual_idx += individuals
+    #         self.batch_idx = (self.batch_idx + individuals) % self.num_batches
+    #         surplus -= 1
+    #
+    #     return fitnesses_total
+
     def _objective_function_population(self, population):
-        individual_idx = 0
         population_size = population.shape[1]
-        individuals_per_device = population_size // self.num_devices
-        surplus = population_size - self.num_devices * individuals_per_device
         fitnesses_total = []
         population_devices = []
         for device in self.devices:
             population_devices.append(population.to(device))
-        for i, device in enumerate(self.devices):
-            individuals = individuals_per_device if surplus <= 0 else individuals_per_device + 1
-            population_device = population_devices[i]
-            fitnesses = self._evaluate_individuals(device, population_device, individual_idx, individual_idx + individuals - 1, self.batch_idx)
+        for current_individual_idx in range(0, population_size, self.population_step):
+            current_device_idx = (current_individual_idx//self.population_step) % self.num_devices
+            current_device = self.devices[current_device_idx]
+            population_device = population_devices[current_device_idx]
+            if population_size - current_individual_idx >= self.population_step:
+                number_of_individuals = self.population_step
+            else:
+                number_of_individuals = population_size - current_individual_idx
+            end_individual_idx = current_individual_idx + number_of_individuals - 1
+            fitnesses = self._evaluate_individuals(current_device, population_device, current_individual_idx, end_individual_idx, self.batch_idx)
             fitnesses_total.extend(fitnesses)
-            individual_idx += individuals
-            self.batch_idx = (self.batch_idx + individuals) % self.num_batches
-            surplus -= 1
+            self.batch_idx = (self.batch_idx + number_of_individuals) % self.num_batches
 
         return fitnesses_total
 
