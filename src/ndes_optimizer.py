@@ -173,9 +173,13 @@ class BasenDESOptimizer:
         individuals_per_device = population_size // self.num_devices
         surplus = population_size - self.num_devices * individuals_per_device
         fitnesses_total = []
+        population_devices = []
+        for device in self.devices:
+            population_devices.append(population.to(device))
         for i, device in enumerate(self.devices):
             individuals = individuals_per_device if surplus <= 0 else individuals_per_device + 1
-            fitnesses = self._evaluate_individuals(device, population, individual_idx, individual_idx + individuals - 1, self.batch_idx)
+            population_device = population_devices[i]
+            fitnesses = self._evaluate_individuals(device, population_device, individual_idx, individual_idx + individuals - 1, self.batch_idx)
             fitnesses_total.extend(fitnesses)
             individual_idx += individuals
             self.batch_idx = (self.batch_idx + individuals) % self.num_batches
@@ -184,11 +188,10 @@ class BasenDESOptimizer:
         return fitnesses_total
 
     def _evaluate_individuals(self, device, population, start_individual, end_individual, start_batch_idx):
-        population_device = population.to(device)
         batches_device = self.device_to_batches[str(device)]
         fitnesses = []
         for i in range(start_individual, end_individual+1):
-            individual = population_device[:, i]
+            individual = population[:, i]
             model = self.device_to_model[str(device)]
             batch_idx = (start_batch_idx + i) % self.num_batches
             batch = batches_device[batch_idx]

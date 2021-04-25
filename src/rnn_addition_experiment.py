@@ -30,8 +30,7 @@ class Net(pl.LightningModule):
         lens_unpacked -= 1
         lens = lens_unpacked.unsqueeze(-1)
         indices = lens.repeat(1, 4)
-        self.indices = indices.unsqueeze(1)
-        self.indices.type_as(indices)
+        self.indices = indices.unsqueeze(1).to(x.data.device)
         out = torch.gather(seq_unpacked, 1, self.indices)
         return self.output(out).flatten()
 

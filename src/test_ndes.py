@@ -34,7 +34,7 @@ def test_multiple_batches_2():
     start = timer()
     best_model = _optimize_addition_experiment_model(10)
     end = timer()
-    print(end-start)
+    print(end - start)
     parameters = best_model.parameters()
     parameter1_expected = np.array(
         [[0.20142989, 0.16085166, -1.008347, -0.4765443, -0.62992036, 0.53645694, 0.10092552, 1.034528]])
@@ -66,7 +66,7 @@ def _optimize_addition_experiment_model(n_batches):
         device = torch.device(f"cuda:{i}")
         for i in range(n_batches):
             data_generator = DummyDataGenerator(
-                *dataset_generator(500, sequence_length, seed=i), device
+                *dataset_generator(500, sequence_length, seed=i, device=device), device
             )
             _, batch = next(data_generator)
             batches.append(batch)
@@ -86,7 +86,7 @@ def _optimize_addition_experiment_model(n_batches):
         criterion=cost_function,
         data_gen=data_generator,
         budget=10000,
-        #budget=1000,
+        # budget=1000,
         history=16,
         nn_train=True,
         lower=-2,
@@ -98,7 +98,7 @@ def _optimize_addition_experiment_model(n_batches):
         batches=batches,
         log_dir=f"rnn_addition_{sequence_length}",
         models=models,
-	lambda_=4,
+        lambda_=4,
         device_to_batches=device_to_batches
     )
 
@@ -117,5 +117,5 @@ def _seed_everything():
 
 if __name__ == "__main__":
     global N_DEVICES
-    N_DEVICES = 2
+    N_DEVICES = 1
     test_multiple_batches_2()

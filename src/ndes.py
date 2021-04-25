@@ -133,7 +133,8 @@ class NDES:
             if cols > 1:
                 fitnesses = self._fitness_wrapper_population(x)
                 return torch.tensor(fitnesses, device=self.device, dtype=self.dtype)
-            return self._fitness_wrapper(x)
+            population = x[:, None]
+            return self._fitness_wrapper_population(population)[0]
 
         budget_left = self.budget - self.count_eval
         if budget_left > 0:
@@ -348,7 +349,7 @@ class NDES:
                 start = timer()
                 fitness = self._fitness_lamarckian(population)
                 torch.cuda.synchronize(device=torch.device("cuda:0"))
-                torch.cuda.synchronize(device=torch.device("cuda:1"))
+                # torch.cuda.synchronize(device=torch.device("cuda:1"))
                 end = timer()
                 evaluation_times.append(end - start)
                 print(f'time of population evaluation: {end-start}')
