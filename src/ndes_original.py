@@ -4,7 +4,6 @@ import gc
 from enum import Enum
 from math import floor, log, sqrt
 from timeit import default_timer as timer
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -27,13 +26,12 @@ class NDES:
     """neural Differential Evolution Strategy (nDES) implementation."""
 
     def __init__(
-        self, initial_value, fn, fn_population, lower, upper, population_initializer, **kwargs
+        self, initial_value, fn, lower, upper, population_initializer, **kwargs
     ):
         self.initial_value = torch.empty_like(initial_value)
         self.initial_value.copy_(initial_value)
         self.problem_size = int(len(initial_value))
         self.fn = fn
-        self.fn_population = fn_population
         self.lower = lower
         self.upper = upper
 
@@ -102,7 +100,6 @@ class NDES:
         self.test_func = kwargs.get("test_func", None)
         self.iter_callback = kwargs.get("iter_callback", None)
         self.log_dir = kwargs.get("log_dir", ".")
-        Path(self.log_dir).mkdir(parents=True, exist_ok=True)
         self.secondary_mutation = kwargs.get("secondary_mutation", None)
 
         self.fitnesses = []
@@ -113,17 +110,6 @@ class NDES:
             self.count_eval += 1
             return self.fn(x)
         return self.worst_fitness
-
-    def _fitness_wrapper_population(self, population):
-        fitnesses = self.fn_population(population)
-        for i in range(population.shape[1]):
-            x = population[:, i]
-            if (x >= self.lower).all() and (x <= self.upper).all():
-                self.count_eval += 1
-            else:
-                fitnesses[i] = self.worst_fitness
-
-        return fitnesses
 
     # @profile
     def _fitness_lamarckian(self, x):
@@ -136,14 +122,14 @@ class NDES:
         fitnesses = []
         if self.count_eval + cols <= self.budget:
             if cols > 1:
-                fitnesses = self._fitness_wrapper_population(x)
+                for i in range(cols):
+                    fitnesses.append(self._fitness_wrapper(x[:, i]))
                 return torch.tensor(fitnesses, device=self.device, dtype=self.dtype)
-            population = x[:, None]
-            return self._fitness_wrapper_population(population)[0]
+            return self._fitness_wrapper(x)
 
         budget_left = self.budget - self.count_eval
-        if budget_left > 0:
-            fitnesses = self._fitness_wrapper_population(x[:, :budget_left])
+        for i in range(budget_left):
+            fitnesses.append(self._fitness_wrapper(x[:, i]))
         if not fitnesses and cols == 1:
             return self.worst_fitness
         return torch.tensor(
@@ -232,7 +218,7 @@ class NDES:
                 "iter",
             ]
         )
-        evaluation_times = []
+        #  evaluation_times = []
         while self.count_eval < self.budget:  # and self.iter_ < self.max_iter:
 
             hist_head = -1
@@ -257,11 +243,11 @@ class NDES:
             if self.lamarckism:
                 population = bounce_back_boundary_2d(population, self.lower, self.upper)
 
-            start = timer()
+            #  start = timer()
             fitness = self._fitness_lamarckian(population)
             self.fitnesses.append(fitness)
-            end = timer()
-            evaluation_times.append(end - start)
+            #  end = timer()
+            #  evaluation_times.append(end - start)
 
             new_mean = torch.empty_like(self.initial_value)
             new_mean.copy_(self.initial_value)
@@ -317,8 +303,8 @@ class NDES:
                         self.mu * self.cp * (2 - self.cp)
                     ) * step
 
-                #print(f"|step|={(step**2).sum().item()}")
-                #print(f"|pc|={(pc**2).sum().item()}")
+                print(f"|step|={(step**2).sum().item()}")
+                print(f"|pc|={(pc**2).sum().item()}")
                 iter_log["step"] = (step ** 2).sum().item()
                 iter_log["pc"] = (pc ** 2).sum().item()
 
@@ -352,22 +338,19 @@ class NDES:
                 torch.cuda.empty_cache()
 
                 # Evaluation
-                start = timer()
+                #  start = timer()
                 fitness = self._fitness_lamarckian(population)
                 self.fitnesses.append(fitness)
-                torch.cuda.synchronize(device=torch.device("cuda:0"))
-                # torch.cuda.synchronize(device=torch.device("cuda:1"))
-                end = timer()
-                evaluation_times.append(end - start)
-                print(f'time of population evaluation: {end-start}')
+                #  end = timer()
+                #  evaluation_times.append(end - start)
                 if not self.lamarckism:
                     fitness_non_lamarckian = self._fitness_non_lamarckian(
                         population, fitness
                     )
 
                 wb = fitness.argmin()
-                #print(f"best fitness: {fitness[wb]}")
-                #print(f"mean fitness: {fitness.clamp(0, 2.5).mean()}")
+                print(f"best fitness: {fitness[wb]}")
+                print(f"mean fitness: {fitness.clamp(0, 2.5).mean()}")
                 iter_log["best_fitness"] = fitness[wb].item()
                 iter_log["mean_fitness"] = fitness.clamp(0, 2.5).mean().item()
                 iter_log["iter"] = self.iter_
@@ -392,7 +375,7 @@ class NDES:
                 )
 
                 fn_cum = self._fitness_lamarckian(cum_mean_repaired)
-                # print(f"fn_cum: {fn_cum}")
+                print(f"fn_cum: {fn_cum}")
                 iter_log["fn_cum"] = fn_cum
 
                 if self.test_func is None and fn_cum < self.best_fitness:
@@ -407,7 +390,7 @@ class NDES:
                     and self.count_eval < 0.8 * self.budget
                 ):
                     stoptol = True
-                #print(f"iter={self.iter_}")
+                print(f"iter={self.iter_}")
                 iter_log["best_found"] = self.best_fitness
                 if self.iter_ % 50 == 0 and self.test_func is not None:
                     (test_loss, test_acc), self.best_solution = self.test_func(
@@ -419,17 +402,15 @@ class NDES:
                 iter_log["test_loss"] = test_loss
                 iter_log["test_acc"] = test_acc
                 log_ = log_.append(iter_log, ignore_index=True)
-                if self.iter_ % 50 == 0:
-                    log_.to_csv(f"{self.log_dir}/ndes_log_{self.start}.csv")
+                # if self.iter_ % 50 == 0:
+                    # log_.to_csv(f"{self.log_dir}/ndes_log_{self.start}.csv")
 
                 if self.iter_callback:
                     self.iter_callback()
 
-        log_.to_csv(f"ndes_log_{self.start}.csv")
-        print(evaluation_times)
-        # print(len(evaluation_times))
-        print(np.mean(evaluation_times))
-        # np.save(f"times_{self.problem_size}.npy", np.array(evaluation_times))
+        # log_.to_csv(f"ndes_log_{self.start}.csv")
+        #  np.save(f"times_{self.problem_size}.npy", np.array(evaluation_times))
         global fitnesses
         fitnesses = self.fitnesses
+
         return self.best_solution  # , log_

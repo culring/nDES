@@ -6,7 +6,7 @@ import cma
 import numpy as np
 import torch
 
-from ndes import NDES, SecondaryMutation
+from ndes_new import NDES, SecondaryMutation
 from population_initializers import (
     StartFromUniformPopulationInitializer,
     XavierMVNPopulationInitializer,
@@ -69,7 +69,6 @@ class BasenDESOptimizer:
         population_initializer=XavierMVNPopulationInitializer,
         restarts=None,
         lr=1e-3,
-        models=None,
         **kwargs,
     ):
         """
@@ -102,27 +101,9 @@ class BasenDESOptimizer:
         self.xavier_coeffs = self.calculate_xavier_coefficients(model.parameters())
         self.secondary_mutation = kwargs.get("secondary_mutation", None)
         self.lr = lr
-        self.devices = kwargs.get("devices")
-        self.num_devices = len(self.devices)
-        self.batches = kwargs.get("batches")
-        self.num_batches = len(self.batches)
-        self.device_to_model = models
-        self.device_to_batches = kwargs.get("device_to_batches")
-        self.batch_idx = 0
-        self.population_step = kwargs.get("population_step", 2)
-        # self.load_batches()
         if use_fitness_ewma:
             self.ewma_logger = FitnessEWMALogger(data_gen, model, criterion)
             self.kwargs["iter_callback"] = self.ewma_logger.update_after_iteration
-
-    def load_batches(self):
-        self.device_to_batches = dict()
-        for device in self.devices:
-            batches_device = []
-            for batch in self.batches:
-                batch_device = batch[0].to(device), batch[1].to(device)
-                batches_device.append(batch_device)
-            self.device_to_batches[str(device)] = batches_device
 
     def zip_layers(self, layers_iter):
         """Concatenate flattened layers into a single 1-D tensor.
@@ -168,88 +149,10 @@ class BasenDESOptimizer:
             yield zipped_layers[start:offset].view(shape)
             start = offset
 
-    # def _objective_function_population(self, population):
-    #     individual_idx = 0
-    #     population_size = population.shape[1]
-    #     individuals_per_device = population_size // self.num_devices
-    #     surplus = population_size - self.num_devices * individuals_per_device
-    #     fitnesses_total = []
-    #     population_devices = []
-    #     for device in self.devices:
-    #         population_devices.append(population.to(device))
-    #     for i, device in enumerate(self.devices):
-    #         individuals = individuals_per_device if surplus <= 0 else individuals_per_device + 1
-    #         population_device = population_devices[i]
-    #         fitnesses = self._evaluate_individuals(device, population_device, individual_idx, individual_idx + individuals - 1, self.batch_idx)
-    #         fitnesses_total.extend(fitnesses)
-    #         individual_idx += individuals
-    #         self.batch_idx = (self.batch_idx + individuals) % self.num_batches
-    #         surplus -= 1
-    #
-    #     return fitnesses_total
-
-    def _objective_function_population(self, population):
-        population_size = population.shape[1]
-        fitnesses_total = []
-        population_devices = []
-        for device in self.devices:
-            population_devices.append(population.to(device))
-        for current_individual_idx in range(0, population_size, self.population_step):
-            current_device_idx = (current_individual_idx//self.population_step) % self.num_devices
-            current_device = self.devices[current_device_idx]
-            population_device = population_devices[current_device_idx]
-            if population_size - current_individual_idx >= self.population_step:
-                number_of_individuals = self.population_step
-            else:
-                number_of_individuals = population_size - current_individual_idx
-            fitnesses = self._evaluate_individuals_on_device(current_device, population_device, current_individual_idx, self.batch_idx, number_of_individuals)
-            fitnesses_total.extend(fitnesses)
-            self.batch_idx = (self.batch_idx + number_of_individuals) % self.num_batches
-
-        return fitnesses_total
-
-    def _evaluate_individuals_on_device(self, device, population, start_individual_idx, start_batch_idx, count):
-        batches_device = self.device_to_batches[str(device)]
-        fitnesses = []
-        model = self.device_to_model[str(device)]
-        for i in range(count):
-            individual_idx = start_individual_idx + i
-            individual = population[:, individual_idx]
-            batch_idx = (start_batch_idx + i) % self.num_batches
-            batch = batches_device[batch_idx]
-            fitness = self._infer(model, individual, batch)
-            fitnesses.append(fitness)
-
-        return fitnesses
-
-    def _infer(self, model, individual, batch):
-        """Custom objective function for the DES optimizer."""
-        self._reweight_model(model, individual)
-        b_x, y = batch
-        if self.secondary_mutation == SecondaryMutation.Gradient:
-            gradient = []
-            with torch.enable_grad():
-                model.zero_grad()
-                out = model(b_x)
-                loss = self.criterion(out, y)
-                loss.backward()
-                for param in model.parameters():
-                    gradient.append(param.grad.flatten())
-                gradient = torch.cat(gradient, 0)
-                # In-place mutation of the weights
-                individual -= self.lr * gradient
-        else:
-            out = model(b_x)
-            loss = self.criterion(out, y)
-        loss = loss.item()
-        # if self.use_fitness_ewma:
-        #     return self.ewma_logger.update_batch(batch_idx, loss)
-        return loss
-
     # @profile
     def _objective_function(self, weights):
         """Custom objective function for the DES optimizer."""
-        self._reweight_model(self.model, weights)
+        self._reweight_model(weights)
         batch_idx, (b_x, y) = next(self.data_gen)
         if self.secondary_mutation == SecondaryMutation.Gradient:
             gradient = []
@@ -300,7 +203,6 @@ class BasenDESOptimizer:
                 dict(
                     initial_value=best_value,
                     fn=self._objective_function,
-                    fn_population=self._objective_function_population,
                     xavier_coeffs=self.xavier_coeffs,
                     population_initializer=population_initializer,
                     test_func=test_func,
@@ -321,12 +223,12 @@ class BasenDESOptimizer:
             else:
                 ndes = NDES(**self.kwargs)
                 best_value = ndes.run()
-            self._reweight_model(self.model, best_value)
+            self._reweight_model(best_value)
             return self.model
 
     # @profile
-    def _reweight_model(self, model, individual):
-        for param, layer in zip(model.parameters(), self.unzip_layers(individual)):
+    def _reweight_model(self, weights):
+        for param, layer in zip(self.model.parameters(), self.unzip_layers(weights)):
             param.data.copy_(layer)
 
     # @profile
