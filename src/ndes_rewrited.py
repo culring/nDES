@@ -102,7 +102,7 @@ class NDES:
         self.log_dir = kwargs.get("log_dir", ".")
         self.secondary_mutation = kwargs.get("secondary_mutation", None)
 
-        self.fitnesses = []
+        self.fn_population = kwargs.get("fn_population")
 
     # @profile
     def _fitness_wrapper(self, x):
@@ -110,6 +110,44 @@ class NDES:
             self.count_eval += 1
             return self.fn(x)
         return self.worst_fitness
+
+    def _fitness_wrapper_population(self, population):
+        fitnesses = self.fn_population(population)
+        for i in range(population.shape[1]):
+            x = population[:, i]
+            if (x >= self.lower).all() and (x <= self.upper).all():
+                self.count_eval += 1
+            else:
+                fitnesses[i] = self.worst_fitness
+
+        return fitnesses
+
+    # # @profile
+    # def _fitness_lamarckian(self, x):
+    #     if np.isscalar(x):
+    #         if self.count_eval < self.budget:
+    #             return self._fitness_wrapper(x)
+    #         return self.worst_fitness
+    #
+    #     cols = 1 if len(x.shape) == 1 else x.shape[1]
+    #     fitnesses = []
+    #     if self.count_eval + cols <= self.budget:
+    #         if cols > 1:
+    #             fitnesses = self._fitness_wrapper_population(x)
+    #             return torch.tensor(fitnesses, device=self.device, dtype=self.dtype)
+    #         population = x[:, None]
+    #         return self._fitness_wrapper_population(population)[0]
+    #
+    #     budget_left = self.budget - self.count_eval
+    #     for i in range(budget_left):
+    #         fitnesses.append(self._fitness_wrapper(x[:, i]))
+    #     if not fitnesses and cols == 1:
+    #         return self.worst_fitness
+    #     return torch.tensor(
+    #         fitnesses + [self.worst_fitness] * (cols - budget_left),
+    #         device=self.device,
+    #         dtype=self.dtype,
+    #     )
 
     # @profile
     def _fitness_lamarckian(self, x):
@@ -245,7 +283,6 @@ class NDES:
 
             #  start = timer()
             fitness = self._fitness_lamarckian(population)
-            self.fitnesses.append(fitness)
             #  end = timer()
             #  evaluation_times.append(end - start)
 
@@ -340,7 +377,6 @@ class NDES:
                 # Evaluation
                 #  start = timer()
                 fitness = self._fitness_lamarckian(population)
-                self.fitnesses.append(fitness)
                 #  end = timer()
                 #  evaluation_times.append(end - start)
                 if not self.lamarckism:

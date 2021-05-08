@@ -3,7 +3,7 @@ import random
 import torch
 import torch.nn.functional as F
 
-from ndes_optimizer_new import RNNnDESOptimizer as RNNnDESOptimizerNew
+from ndes_optimizer_rewrited import RNNnDESOptimizer as RNNnDESOptimizerNew
 from ndes_optimizer_original import RNNnDESOptimizer as RNNnDESOptimizerOld
 from utils_rnn import DummyDataGenerator
 from rnn_addition_experiment import dataset_generator
@@ -48,12 +48,14 @@ def test_1_old():
 def test_1_new():
     _seed_everything()
     DEVICE = torch.device("cuda:0")
+    devices = [torch.device("cuda:0")]
 
     sequence_length = 20
 
     data_generator = DummyDataGenerator(
         *dataset_generator(5000, sequence_length), DEVICE
     )
+    batches = [next(data_generator)]
 
     net = Net().to(DEVICE)
 
@@ -62,7 +64,7 @@ def test_1_new():
     ndes = RNNnDESOptimizerNew(
         model=net,
         criterion=cost_function,
-        data_gen=data_generator,
+        data_gen=None,
         budget=1000,
         history=16,
         nn_train=True,
@@ -72,6 +74,8 @@ def test_1_new():
         worst_fitness=3,
         device=DEVICE,
         log_dir=f"rnn_addition_{sequence_length}",
+        batches=batches,
+        devices=devices
     )
 
     best = ndes.run()
@@ -94,6 +98,16 @@ def test_2():
 
     model_new = Net()
     model_new.load_state_dict(torch.load("model_2_new.pt"))
+
+    compare_models(model_old, model_new)
+
+
+def test_5_batches():
+    model_old = Net()
+    model_old.load_state_dict(torch.load("model_5_batches_old.pt"))
+
+    model_new = Net()
+    model_new.load_state_dict(torch.load("model_5_batches_new.pt"))
 
     compare_models(model_old, model_new)
 
@@ -142,13 +156,10 @@ def test_multiple_batches_old(number_of_batches, filename):
     torch.save(best.state_dict(), filename)
 
 
-def test_2_old():
-    test_multiple_batches_old(2, "model_2_old.pt")
-
-
 def test_multiple_batches_new(number_of_batches, filename):
     _seed_everything()
     DEVICE = torch.device("cuda:0")
+    devices = [torch.device("cuda:0")]
 
     sequence_length = 20
 
@@ -159,7 +170,6 @@ def test_multiple_batches_new(number_of_batches, filename):
         )
         batch = next(data_generator)
         batches.append(batch)
-    data_generator = cycle(batches)
 
     net = Net().to(DEVICE)
 
@@ -168,7 +178,7 @@ def test_multiple_batches_new(number_of_batches, filename):
     ndes = RNNnDESOptimizerNew(
         model=net,
         criterion=cost_function,
-        data_gen=data_generator,
+        data_gen=None,
         budget=1000,
         history=16,
         nn_train=True,
@@ -178,14 +188,28 @@ def test_multiple_batches_new(number_of_batches, filename):
         worst_fitness=3,
         device=DEVICE,
         log_dir=f"rnn_addition_{sequence_length}",
+        batches=batches,
+        devices=devices
     )
 
     best = ndes.run()
     torch.save(best.state_dict(), filename)
 
 
+def test_2_old():
+    test_multiple_batches_old(2, "model_2_old.pt")
+
+
 def test_2_new():
     test_multiple_batches_new(2, "model_2_new.pt")
+
+
+def test_5_batches_old():
+    test_multiple_batches_old(5, "model_5_batches_old.pt")
+
+
+def test_5_batches_new():
+    test_multiple_batches_new(5, "model_5_batches_new.pt")
 
 
 def _seed_everything():
@@ -216,5 +240,7 @@ def hello():
 
 
 if __name__ == "__main__":
-    method_to_call = getattr(sys.modules[__name__], sys.argv[1])
+    method_name = sys.argv[1]
+    method_to_call = getattr(sys.modules[__name__], method_name)
+    print(method_name.center(50, '-'), file=sys.stderr)
     method_to_call()

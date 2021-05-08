@@ -6,7 +6,7 @@ import cma
 import numpy as np
 import torch
 
-from ndes_new import NDES, SecondaryMutation
+from ndes_rewrited import NDES, SecondaryMutation
 from population_initializers import (
     StartFromUniformPopulationInitializer,
     XavierMVNPopulationInitializer,
@@ -69,6 +69,8 @@ class BasenDESOptimizer:
         population_initializer=XavierMVNPopulationInitializer,
         restarts=None,
         lr=1e-3,
+        batches=None,
+        devices=None,
         **kwargs,
     ):
         """
@@ -104,6 +106,26 @@ class BasenDESOptimizer:
         if use_fitness_ewma:
             self.ewma_logger = FitnessEWMALogger(data_gen, model, criterion)
             self.kwargs["iter_callback"] = self.ewma_logger.update_after_iteration
+
+        self.devices = devices
+        self.device_to_batches = {}
+        self.init_batches(batches)
+        self.batch_idx = 0
+        self.batches_size = len(batches)
+        self.device_to_model = {}
+        self.init_models(model)
+
+    def init_batches(self, batches):
+        for device in self.devices:
+            batches_device = []
+            for batch in batches:
+                _, (b_x, y) = batch
+                batches_device.append((b_x.to(device), y.to(device)))
+            self.device_to_batches[str(device)] = batches_device
+
+    def init_models(self, model):
+        for device in self.devices:
+            self.device_to_model[str(device)] = model.to(device)
 
     def zip_layers(self, layers_iter):
         """Concatenate flattened layers into a single 1-D tensor.
@@ -149,11 +171,18 @@ class BasenDESOptimizer:
             yield zipped_layers[start:offset].view(shape)
             start = offset
 
+    def _objective_function_population(self, population):
+        fitnesses = []
+        for i in range(population.shape[1]):
+            fitnesses.append(self._objective_function(population[:, i]))
+        return fitnesses
+
     # @profile
     def _objective_function(self, weights):
         """Custom objective function for the DES optimizer."""
-        self._reweight_model(weights)
-        batch_idx, (b_x, y) = next(self.data_gen)
+        current_model = self.device_to_model[str(torch.device("cuda:0"))]
+        self._reweight_model(current_model, weights)
+        batch_idx, (b_x, y) = self.get_next_batch()
         if self.secondary_mutation == SecondaryMutation.Gradient:
             gradient = []
             with torch.enable_grad():
@@ -173,6 +202,12 @@ class BasenDESOptimizer:
         if self.use_fitness_ewma:
             return self.ewma_logger.update_batch(batch_idx, loss)
         return loss
+
+    def get_next_batch(self):
+        idx = self.batch_idx
+        self.batch_idx = (self.batch_idx + 1) % self.batches_size
+        current_device_to_batches = self.device_to_batches[str(torch.device("cuda:0"))]
+        return idx, current_device_to_batches[idx]
 
     # @profile
     def run(self, test_func=None):
@@ -203,6 +238,7 @@ class BasenDESOptimizer:
                 dict(
                     initial_value=best_value,
                     fn=self._objective_function,
+                    fn_population=self._objective_function_population,
                     xavier_coeffs=self.xavier_coeffs,
                     population_initializer=population_initializer,
                     test_func=test_func,
@@ -223,12 +259,13 @@ class BasenDESOptimizer:
             else:
                 ndes = NDES(**self.kwargs)
                 best_value = ndes.run()
-            self._reweight_model(best_value)
+            base_cuda_device = self.device_to_model[str(torch.device("cuda:0"))]
+            self._reweight_model(base_cuda_device, best_value)
             return self.model
 
     # @profile
-    def _reweight_model(self, weights):
-        for param, layer in zip(self.model.parameters(), self.unzip_layers(weights)):
+    def _reweight_model(self, model, individual):
+        for param, layer in zip(model.parameters(), self.unzip_layers(individual)):
             param.data.copy_(layer)
 
     # @profile
