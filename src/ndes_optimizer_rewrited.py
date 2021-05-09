@@ -173,15 +173,50 @@ class BasenDESOptimizer:
 
     def _objective_function_population(self, population):
         fitnesses = []
-        for i in range(population.shape[1]):
-            fitnesses.append(self._objective_function(population[:, i]))
+        step = 15
+        num_devices = len(self.devices)
+
+        for i in range(0, population.shape[1], step):
+            current_device_idx = (i//step) % num_devices
+            current_device = self.devices[current_device_idx]
+            model = self.device_to_model[str(current_device)]
+
+            num_individuals_to_evaluate = min(population.shape[1] - i, step)
+            for j in range(num_individuals_to_evaluate):
+                batch = self.get_next_batch()
+                individual = population[:, i+j]
+                fitnesses.append(self._infer_for_population_algorithm(individual, model, batch))
+
         return fitnesses
 
     # @profile
-    def _objective_function(self, weights):
+    def _infer_for_population_algorithm(self, weights, model, batch):
         """Custom objective function for the DES optimizer."""
-        current_model = self.device_to_model[str(torch.device("cuda:0"))]
-        self._reweight_model(current_model, weights)
+        batch_idx, (b_x, y) = batch
+        self._reweight_model(model, weights)
+        if self.secondary_mutation == SecondaryMutation.Gradient:
+            gradient = []
+            with torch.enable_grad():
+                self.model.zero_grad()
+                out = model(b_x)
+                loss = self.criterion(out, y)
+                loss.backward()
+                for param in self.model.parameters():
+                    gradient.append(param.grad.flatten())
+                gradient = torch.cat(gradient, 0)
+                # In-place mutation of the weights
+                weights -= self.lr * gradient
+        else:
+            out = self.model(b_x)
+            loss = self.criterion(out, y)
+        loss = loss.item()
+        if self.use_fitness_ewma:
+            return self.ewma_logger.update_batch(batch_idx, loss)
+        return loss
+
+    def _infer_for_individual_algorithm(self, weights):
+        """Custom objective function for the DES optimizer."""
+        self._reweight_model(self.model, weights)
         batch_idx, (b_x, y) = self.get_next_batch()
         if self.secondary_mutation == SecondaryMutation.Gradient:
             gradient = []
@@ -237,7 +272,7 @@ class BasenDESOptimizer:
             self.kwargs.update(
                 dict(
                     initial_value=best_value,
-                    fn=self._objective_function,
+                    fn=self._infer_for_individual_algorithm,
                     fn_population=self._objective_function_population,
                     xavier_coeffs=self.xavier_coeffs,
                     population_initializer=population_initializer,
