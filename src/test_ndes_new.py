@@ -49,6 +49,7 @@ def test_1_new():
     _seed_everything()
     DEVICE = torch.device("cuda:0")
     devices = [torch.device("cuda:0")]
+    # devices = [torch.device("cuda:0"), torch.device("cuda:1")]
 
     sequence_length = 20
 
@@ -160,6 +161,7 @@ def test_multiple_batches_new(number_of_batches, filename):
     _seed_everything()
     DEVICE = torch.device("cuda:0")
     devices = [torch.device("cuda:0")]
+    # devices = [torch.device("cuda:0"), torch.device("cuda:1")]
 
     sequence_length = 20
 

@@ -183,7 +183,7 @@ class BasenDESOptimizer:
 
             num_individuals_to_evaluate = min(population.shape[1] - i, step)
             for j in range(num_individuals_to_evaluate):
-                batch = self.get_next_batch()
+                batch = self.get_next_batch(current_device)
                 individual = population[:, i+j]
                 fitnesses.append(self._infer_for_population_algorithm(individual, model, batch))
 
@@ -197,7 +197,7 @@ class BasenDESOptimizer:
         if self.secondary_mutation == SecondaryMutation.Gradient:
             gradient = []
             with torch.enable_grad():
-                self.model.zero_grad()
+                model.zero_grad()
                 out = model(b_x)
                 loss = self.criterion(out, y)
                 loss.backward()
@@ -207,7 +207,7 @@ class BasenDESOptimizer:
                 # In-place mutation of the weights
                 weights -= self.lr * gradient
         else:
-            out = self.model(b_x)
+            out = model(b_x)
             loss = self.criterion(out, y)
         loss = loss.item()
         if self.use_fitness_ewma:
@@ -238,10 +238,10 @@ class BasenDESOptimizer:
             return self.ewma_logger.update_batch(batch_idx, loss)
         return loss
 
-    def get_next_batch(self):
+    def get_next_batch(self, device=torch.device("cuda:0")):
         idx = self.batch_idx
         self.batch_idx = (self.batch_idx + 1) % self.batches_size
-        current_device_to_batches = self.device_to_batches[str(torch.device("cuda:0"))]
+        current_device_to_batches = self.device_to_batches[str(device)]
         return idx, current_device_to_batches[idx]
 
     # @profile
