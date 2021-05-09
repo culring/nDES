@@ -244,3 +244,4 @@ if __name__ == "__main__":
     method_to_call = getattr(sys.modules[__name__], method_name)
     print(method_name.center(50, '-'), file=sys.stderr)
     method_to_call()
+    # test_2_new()

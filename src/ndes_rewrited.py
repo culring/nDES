@@ -18,7 +18,6 @@ class SecondaryMutation(Enum):
     Gradient = 2
 
 
-fitnesses = []
 
 
 class NDES:
@@ -112,42 +111,22 @@ class NDES:
         return self.worst_fitness
 
     def _fitness_wrapper_population(self, population):
-        fitnesses = self.fn_population(population)
+        idxs = []
+        fitnesses = population.shape[1] * [None]
         for i in range(population.shape[1]):
             x = population[:, i]
             if (x >= self.lower).all() and (x <= self.upper).all():
                 self.count_eval += 1
+                idxs.append(i)
             else:
                 fitnesses[i] = self.worst_fitness
+        idxs_tensor = torch.tensor(idxs, device=torch.device("cuda:0"), dtype=torch.long)
+        individuals_to_evaluate = torch.index_select(population, 1, idxs_tensor)
+        evals = self.fn_population(individuals_to_evaluate)
+        for i, idx in enumerate(idxs):
+            fitnesses[idx] = evals[i]
 
         return fitnesses
-
-    # # @profile
-    # def _fitness_lamarckian(self, x):
-    #     if np.isscalar(x):
-    #         if self.count_eval < self.budget:
-    #             return self._fitness_wrapper(x)
-    #         return self.worst_fitness
-    #
-    #     cols = 1 if len(x.shape) == 1 else x.shape[1]
-    #     fitnesses = []
-    #     if self.count_eval + cols <= self.budget:
-    #         if cols > 1:
-    #             fitnesses = self._fitness_wrapper_population(x)
-    #             return torch.tensor(fitnesses, device=self.device, dtype=self.dtype)
-    #         population = x[:, None]
-    #         return self._fitness_wrapper_population(population)[0]
-    #
-    #     budget_left = self.budget - self.count_eval
-    #     for i in range(budget_left):
-    #         fitnesses.append(self._fitness_wrapper(x[:, i]))
-    #     if not fitnesses and cols == 1:
-    #         return self.worst_fitness
-    #     return torch.tensor(
-    #         fitnesses + [self.worst_fitness] * (cols - budget_left),
-    #         device=self.device,
-    #         dtype=self.dtype,
-    #     )
 
     # @profile
     def _fitness_lamarckian(self, x):
@@ -157,15 +136,15 @@ class NDES:
             return self.worst_fitness
 
         cols = 1 if len(x.shape) == 1 else x.shape[1]
-        fitnesses = []
         if self.count_eval + cols <= self.budget:
             if cols > 1:
-                for i in range(cols):
-                    fitnesses.append(self._fitness_wrapper(x[:, i]))
+                fitnesses = self._fitness_wrapper_population(x)
                 return torch.tensor(fitnesses, device=self.device, dtype=self.dtype)
-            return self._fitness_wrapper(x)
+            population = x[:, None]
+            return self._fitness_wrapper_population(population)[0]
 
         budget_left = self.budget - self.count_eval
+        fitnesses = []
         for i in range(budget_left):
             fitnesses.append(self._fitness_wrapper(x[:, i]))
         if not fitnesses and cols == 1:
