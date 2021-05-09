@@ -1,3 +1,4 @@
+import copy
 import gc
 from math import sqrt
 from timeit import default_timer as timer
@@ -125,7 +126,7 @@ class BasenDESOptimizer:
 
     def init_models(self, model):
         for device in self.devices:
-            self.device_to_model[str(device)] = model.to(device)
+            self.device_to_model[str(device)] = copy.deepcopy(model).to(device)
 
     def zip_layers(self, layers_iter):
         """Concatenate flattened layers into a single 1-D tensor.

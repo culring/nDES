@@ -49,7 +49,7 @@ def test_1_new():
     _seed_everything()
     DEVICE = torch.device("cuda:0")
     devices = [torch.device("cuda:0")]
-    # devices = [torch.device("cuda:0"), torch.device("cuda:1")]
+    #devices = [torch.device("cuda:0"), torch.device("cuda:1")]
 
     sequence_length = 20
 
@@ -160,8 +160,8 @@ def test_multiple_batches_old(number_of_batches, filename):
 def test_multiple_batches_new(number_of_batches, filename):
     _seed_everything()
     DEVICE = torch.device("cuda:0")
-    devices = [torch.device("cuda:0")]
-    # devices = [torch.device("cuda:0"), torch.device("cuda:1")]
+    # devices = [torch.device("cuda:0")]
+    devices = [torch.device("cuda:0"), torch.device("cuda:1")]
 
     sequence_length = 20
 
@@ -246,4 +246,4 @@ if __name__ == "__main__":
     method_to_call = getattr(sys.modules[__name__], method_name)
     print(method_name.center(50, '-'), file=sys.stderr)
     method_to_call()
-    # test_2_new()
+    #test_2_new()
