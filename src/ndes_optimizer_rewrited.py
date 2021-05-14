@@ -174,19 +174,26 @@ class BasenDESOptimizer:
 
     def _objective_function_population(self, population):
         fitnesses = []
-        step = 15
-        num_devices = len(self.devices)
+        # step = 15
+        # num_devices = len(self.devices)
+        #
+        # for i in range(0, population.shape[1], step):
+        #     current_device_idx = (i//step) % num_devices
+        #     current_device = self.devices[current_device_idx]
+        #     model = self.device_to_model[str(current_device)]
+        #
+        #     num_individuals_to_evaluate = min(population.shape[1] - i, step)
+        #     for j in range(num_individuals_to_evaluate):
+        #         batch = self.get_next_batch(current_device)
+        #         individual = population[:, i+j]
+        #         fitnesses.append(self._infer_for_population_algorithm(individual, model, batch))
 
-        for i in range(0, population.shape[1], step):
-            current_device_idx = (i//step) % num_devices
-            current_device = self.devices[current_device_idx]
-            model = self.device_to_model[str(current_device)]
-
-            num_individuals_to_evaluate = min(population.shape[1] - i, step)
-            for j in range(num_individuals_to_evaluate):
-                batch = self.get_next_batch(current_device)
-                individual = population[:, i+j]
-                fitnesses.append(self._infer_for_population_algorithm(individual, model, batch))
+        current_device = self.devices[0]
+        model = self.device_to_model[str(current_device)]
+        for i in range(population.shape[1]):
+            batch = self.get_next_batch(current_device)
+            individual = population[:, i]
+            fitnesses.append(self._infer_for_population_algorithm(individual, model, batch))
 
         return fitnesses
 
@@ -202,7 +209,7 @@ class BasenDESOptimizer:
                 out = model(b_x)
                 loss = self.criterion(out, y)
                 loss.backward()
-                for param in self.model.parameters():
+                for param in model.parameters():
                     gradient.append(param.grad.flatten())
                 gradient = torch.cat(gradient, 0)
                 # In-place mutation of the weights

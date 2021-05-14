@@ -366,6 +366,7 @@ class NDES:
                 wb = fitness.argmin()
                 print(f"best fitness: {fitness[wb]}")
                 print(f"mean fitness: {fitness.clamp(0, 2.5).mean()}")
+                print(self.count_eval)
                 iter_log["best_fitness"] = fitness[wb].item()
                 iter_log["mean_fitness"] = fitness.clamp(0, 2.5).mean().item()
                 iter_log["iter"] = self.iter_
