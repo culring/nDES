@@ -128,7 +128,6 @@ class NDES:
 
         return fitnesses
 
-    # @profile
     def _fitness_lamarckian(self, x):
         if np.isscalar(x):
             if self.count_eval < self.budget:
@@ -136,15 +135,14 @@ class NDES:
             return self.worst_fitness
 
         cols = 1 if len(x.shape) == 1 else x.shape[1]
+        fitnesses = []
         if self.count_eval + cols <= self.budget:
             if cols > 1:
                 fitnesses = self._fitness_wrapper_population(x)
                 return torch.tensor(fitnesses, device=self.device, dtype=self.dtype)
-            population = x[:, None]
-            return self._fitness_wrapper_population(population)[0]
+            return self._fitness_wrapper(x)
 
         budget_left = self.budget - self.count_eval
-        fitnesses = []
         for i in range(budget_left):
             fitnesses.append(self._fitness_wrapper(x[:, i]))
         if not fitnesses and cols == 1:

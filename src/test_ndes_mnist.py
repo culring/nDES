@@ -196,5 +196,6 @@ def test_new():
 
 if __name__ == "__main__":
     _seed_everything()
-    test_old()
     # test_new()
+    test_old()
+    test_old()
