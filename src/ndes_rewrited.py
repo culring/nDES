@@ -103,6 +103,8 @@ class NDES:
 
         self.fn_population = kwargs.get("fn_population")
 
+        self.fitnesses = []
+
     # @profile
     def _fitness_wrapper(self, x):
         if (x >= self.lower).all() and (x <= self.upper).all():
@@ -406,16 +408,23 @@ class NDES:
                     stoptol = True
                 print(f"iter={self.iter_}")
                 iter_log["best_found"] = self.best_fitness
-                if self.iter_ % 50 == 0 and self.test_func is not None:
-                    (test_loss, test_acc), self.best_solution = self.test_func(
+                if self.iter_ % 10 == 0 and self.test_func is not None:
+                    # (test_loss, test_acc), self.best_solution = self.test_func(
+                    #     population
+                    # )
+                    test_acc, best_solution = self.test_func(
                         population
                     )
+                    if test_acc < self.best_fitness:
+                        self.best_fitness = test_acc
+                        self.best_solution = best_solution
+                    self.fitnesses.append(test_acc)
                 else:
                     test_loss, test_acc = None, None
 
-                iter_log["test_loss"] = test_loss
-                iter_log["test_acc"] = test_acc
-                log_ = log_.append(iter_log, ignore_index=True)
+                # iter_log["test_loss"] = test_loss
+                # iter_log["test_acc"] = test_acc
+                # log_ = log_.append(iter_log, ignore_index=True)
                 # if self.iter_ % 50 == 0:
                 #     log_.to_csv(f"{self.log_dir}/ndes_log_{self.start}.csv")
 
@@ -425,4 +434,4 @@ class NDES:
         # log_.to_csv(f"ndes_log_{self.start}.csv")
         #  np.save(f"times_{self.problem_size}.npy", np.array(evaluation_times))
 
-        return self.best_solution  # , log_
+        return self.best_solution, self.fitnesses  # , log_

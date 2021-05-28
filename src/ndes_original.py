@@ -245,7 +245,6 @@ class NDES:
 
             #  start = timer()
             fitness = self._fitness_lamarckian(population)
-            self.fitnesses.append(fitness)
             #  end = timer()
             #  evaluation_times.append(end - start)
 
@@ -340,7 +339,6 @@ class NDES:
                 # Evaluation
                 #  start = timer()
                 fitness = self._fitness_lamarckian(population)
-                self.fitnesses.append(fitness)
                 #  end = timer()
                 #  evaluation_times.append(end - start)
                 if not self.lamarckism:
@@ -379,6 +377,12 @@ class NDES:
                 print(f"fn_cum: {fn_cum}")
                 iter_log["fn_cum"] = fn_cum
 
+                if self.test_func is None:
+                    if fitness[wb].item() < fn_cum:
+                        self.fitnesses.append(fitness[wb].item())
+                    else:
+                        self.fitnesses.append(fn_cum)
+
                 if self.test_func is None and fn_cum < self.best_fitness:
                     self.best_fitness = fn_cum
                     self.best_solution = cum_mean_repaired
@@ -393,25 +397,32 @@ class NDES:
                     stoptol = True
                 print(f"iter={self.iter_}")
                 iter_log["best_found"] = self.best_fitness
-                if self.iter_ % 50 == 0 and self.test_func is not None:
-                    (test_loss, test_acc), self.best_solution = self.test_func(
+                if self.iter_ % 10 == 0 and self.test_func is not None:
+                    # (test_loss, test_acc), self.best_solution = self.test_func(
+                    #     population
+                    # )
+                    test_acc, best_solution = self.test_func(
                         population
                     )
+                    if test_acc < self.best_fitness:
+                        self.best_fitness = test_acc
+                        self.best_solution = best_solution
+                    self.fitnesses.append(test_acc)
                 else:
                     test_loss, test_acc = None, None
 
-                iter_log["test_loss"] = test_loss
-                iter_log["test_acc"] = test_acc
-                log_ = log_.append(iter_log, ignore_index=True)
+                # iter_log["test_loss"] = test_loss
+                # iter_log["test_acc"] = test_acc
+                # log_ = log_.append(iter_log, ignore_index=True)
                 # if self.iter_ % 50 == 0:
                     # log_.to_csv(f"{self.log_dir}/ndes_log_{self.start}.csv")
 
                 if self.iter_callback:
                     self.iter_callback()
 
+                print(f'CURRENT BEST FITNESS: {self.best_fitness}')
+
         # log_.to_csv(f"ndes_log_{self.start}.csv")
         #  np.save(f"times_{self.problem_size}.npy", np.array(evaluation_times))
-        global fitnesses
-        fitnesses = self.fitnesses
 
-        return self.best_solution  # , log_
+        return self.best_solution, self.fitnesses  # , log_

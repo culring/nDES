@@ -288,12 +288,14 @@ class BasenDESOptimizer:
                 )
             )
             if self.restarts is not None:
+                fitnesses_iterations = []
                 for i in range(self.restarts):
                     self.kwargs["population_initializer"] = self.population_initializer(
                         best_value, *population_initializer_args
                     )
                     ndes = NDES(log_id=i, **self.kwargs)
-                    best_value = ndes.run()
+                    best_value, fitnesses = ndes.run()
+                    fitnesses_iterations.append(fitnesses)
                     del ndes
                     if self.test_func is not None:
                         self.test_model(best_value)
@@ -304,7 +306,7 @@ class BasenDESOptimizer:
                 best_value = ndes.run()
             base_cuda_device = self.device_to_model[str(torch.device("cuda:0"))]
             self._reweight_model(base_cuda_device, best_value)
-            return self.model
+            return self.model, fitnesses_iterations
 
     # @profile
     def _reweight_model(self, model, individual):
@@ -315,7 +317,7 @@ class BasenDESOptimizer:
     def test_model(self, weights):
         end = timer()
         model = self.model
-        self._reweight_model(weights)
+        self._reweight_model(model, weights)
         print(f"\nPerf after {seconds_to_human_readable(end - self.start)}")
         return self.test_func(model)
 
@@ -327,7 +329,7 @@ class BasenDESOptimizer:
         min_loss = torch.finfo(torch.float32).max
         best_idx = None
         for i in range(population.shape[1]):
-            self._reweight_model(population[:, i])
+            self._reweight_model(self.model, population[:, i])
             out = self.model(self.x_val)
             loss = self.criterion(out, self.y_val).item()
             if loss < min_loss:

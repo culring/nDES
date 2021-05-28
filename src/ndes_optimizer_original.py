@@ -209,12 +209,14 @@ class BasenDESOptimizer:
                 )
             )
             if self.restarts is not None:
+                fitnesses_iterations = []
                 for i in range(self.restarts):
                     self.kwargs["population_initializer"] = self.population_initializer(
                         best_value, *population_initializer_args
                     )
                     ndes = NDES(log_id=i, **self.kwargs)
-                    best_value = ndes.run()
+                    best_value, fitnesses = ndes.run()
+                    fitnesses_iterations.append(fitnesses)
                     del ndes
                     if self.test_func is not None:
                         self.test_model(best_value)
@@ -224,7 +226,7 @@ class BasenDESOptimizer:
                 ndes = NDES(**self.kwargs)
                 best_value = ndes.run()
             self._reweight_model(best_value)
-            return self.model
+            return self.model, fitnesses_iterations
 
     # @profile
     def _reweight_model(self, weights):
