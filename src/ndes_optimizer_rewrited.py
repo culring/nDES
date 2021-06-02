@@ -287,8 +287,8 @@ class BasenDESOptimizer:
                     test_func=test_func,
                 )
             )
+            fitnesses_iterations = []
             if self.restarts is not None:
-                fitnesses_iterations = []
                 for i in range(self.restarts):
                     self.kwargs["population_initializer"] = self.population_initializer(
                         best_value, *population_initializer_args
@@ -303,7 +303,8 @@ class BasenDESOptimizer:
                     torch.cuda.empty_cache()
             else:
                 ndes = NDES(**self.kwargs)
-                best_value = ndes.run()
+                best_value, fitnesses = ndes.run()
+                fitnesses_iterations.append(fitnesses)
             base_cuda_device = self.device_to_model[str(torch.device("cuda:0"))]
             self._reweight_model(base_cuda_device, best_value)
             return self.model, fitnesses_iterations

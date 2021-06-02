@@ -407,7 +407,7 @@ class NDES:
                     if test_acc < self.best_fitness:
                         self.best_fitness = test_acc
                         self.best_solution = best_solution
-                    self.fitnesses.append(test_acc)
+                    self.fitnesses.append(test_acc.item())
                 else:
                     test_loss, test_acc = None, None
 

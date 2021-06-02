@@ -394,6 +394,12 @@ class NDES:
                 print(f"fn_cum: {fn_cum}")
                 iter_log["fn_cum"] = fn_cum
 
+                if self.test_func is None:
+                    if fitness[wb].item() < fn_cum:
+                        self.fitnesses.append(fitness[wb].item())
+                    else:
+                        self.fitnesses.append(fn_cum)
+
                 if self.test_func is None and fn_cum < self.best_fitness:
                     self.best_fitness = fn_cum
                     self.best_solution = cum_mean_repaired
@@ -418,7 +424,7 @@ class NDES:
                     if test_acc < self.best_fitness:
                         self.best_fitness = test_acc
                         self.best_solution = best_solution
-                    self.fitnesses.append(test_acc)
+                    self.fitnesses.append(test_acc.item())
                 else:
                     test_loss, test_acc = None, None
 

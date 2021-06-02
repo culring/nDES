@@ -61,7 +61,7 @@ def cycle(batches):
 
 def test():
     batches = get_batches()
-    # old_score = test_old(batches)
+    old_score = test_old(batches)
     old_score = 0.0031
     new_score = test_new(batches)
 
@@ -82,7 +82,7 @@ def test_old(batches):
         restarts=1,
         lower=-2.,
         upper=2.,
-        budget=65000,
+        budget=35000,
         tol=1e-6,
         nn_train=True,
         history=16,
@@ -98,9 +98,7 @@ def test_old(batches):
     if DRAW_CHARTS:
         fig, axs = plt.subplots(len(fitnesses_iterations), squeeze=False)
         for idx, fitnesses in enumerate(fitnesses_iterations):
-            fitnesses_cpu = [fitness.cpu() for fitness in fitnesses]
-            # fitnesses_cpu = fitnesses
-            axs[idx, 0].plot(range(len(fitnesses_cpu)), fitnesses_cpu)
+            axs[idx, 0].plot(range(len(fitnesses)), fitnesses)
         plt.show()
 
         draw_predictions(model, x_test_cpu, y_test_cpu)
@@ -122,7 +120,7 @@ def test_new(batches):
         restarts=1,
         lower=-2.,
         upper=2.,
-        budget=65000,
+        budget=35000,
         tol=1e-6,
         nn_train=True,
         history=16,
@@ -141,8 +139,7 @@ def test_new(batches):
         fig, axs = plt.subplots(len(fitnesses_iterations), squeeze=False)
         # plt.yscale("log")
         for idx, fitnesses in enumerate(fitnesses_iterations):
-            fitnesses_cpu = [fitness.cpu() for fitness in fitnesses]
-            axs[idx, 0].plot(range(len(fitnesses_cpu)), fitnesses_cpu)
+            axs[idx, 0].plot(range(len(fitnesses)), fitnesses)
         plt.show()
 
         draw_predictions(model, x_test_cpu, y_test_cpu)
