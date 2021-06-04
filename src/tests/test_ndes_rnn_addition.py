@@ -42,201 +42,10 @@ def plot_fitnesses(fitnesses_iterations):
     plt.show()
 
 
-def test_rnn_addition_single_batch_old(train_data):
-    net = Net().to(DEVICE)
-
-    cost_function = F.mse_loss
-
-    ndes = RNNnDESOptimizerOld(
-        model=net,
-        criterion=cost_function,
-        data_gen=train_data,
-        budget=72000,
-        # budget=3000,
-        history=16,
-        nn_train=True,
-        lower=-2,
-        upper=2,
-        tol=1e-6,
-        worst_fitness=3,
-        device=DEVICE,
-        log_dir=f"rnn_addition_{SEQUENCE_LENGTH}",
-    )
-
-    best, fitnesses_iterations = ndes.run()
-
-    plot_fitnesses(fitnesses_iterations)
-
-    return best
-    # torch.save(best.state_dict(), "model_1_old.pt")
-
-
-def test_rnn_addition_single_batch_new(batches):
-    net = Net().to(DEVICE)
-
-    cost_function = F.mse_loss
-
-    ndes = RNNnDESOptimizerNew(
-        model=net,
-        criterion=cost_function,
-        data_gen=None,
-        budget=72000,
-        # budget=3000,
-        history=16,
-        nn_train=True,
-        lower=-2,
-        upper=2,
-        tol=1e-6,
-        worst_fitness=3,
-        device=DEVICE,
-        log_dir=f"rnn_addition_{SEQUENCE_LENGTH}",
-
-        batches=batches,
-        devices=DEVICES
-    )
-
-    best, fitnesses_iterations = ndes.run()
-
-    plot_fitnesses(fitnesses_iterations)
-
-    return best
-    # torch.save(best.state_dict(), "model_1_new.pt")
-
-
-def eval(model, test_data, criterion):
+def eval(model, test_data):
     _, (x, y) = test_data
     out = model(x)
-    return criterion(out, y).item()
-
-
-def test_rnn_addition_single_batch():
-    _seed_everything()
-    batches, data_gen = generate_dataset(1)
-
-    # model_old = test_rnn_addition_single_batch_old(data_gen)
-    model_new = test_rnn_addition_single_batch_new(batches)
-
-    test_batches, _ = generate_dataset(1, 1000)
-    criterion = F.mse_loss
-
-    accuracy_old = 0.0082
-    # accuracy_old = eval(model_old, test_batches[0], criterion)
-    # print(eval_old)
-    accuracy_new = eval(model_new, test_batches[0], criterion)
-    print(accuracy_old, accuracy_new)
-
-    assert abs(accuracy_new - accuracy_old) < 0.0005, \
-        f"Model don't match: old_acc = {accuracy_old}, new_acc = {accuracy_new}"
-
-
-def cycle_data_generators(generators):
-    while True:
-        for generator in generators:
-            yield next(generator)
-
-
-def test_rnn_addition_two_batches_old():
-    _seed_everything()
-    DEVICE = torch.device("cuda:0")
-
-    sequence_length = 20
-
-    generators = []
-    for i in range(2):
-        data_generator = DummyDataGenerator(
-            *dataset_generator(5000, sequence_length), DEVICE
-        )
-        generators.append(data_generator)
-    cycler = cycle_data_generators(generators)
-
-    net = Net().to(DEVICE)
-
-    cost_function = F.mse_loss
-
-    ndes = RNNnDESOptimizerOld(
-        model=net,
-        criterion=cost_function,
-        data_gen=cycler,
-        budget=55000,
-        history=16,
-        nn_train=True,
-        lower=-2,
-        upper=2,
-        tol=1e-6,
-        worst_fitness=3,
-        device=DEVICE,
-        log_dir=f"rnn_addition_{sequence_length}",
-    )
-
-    best = ndes.run()
-
-    accuracy = eval_multiple_batches(best, generators)
-
-    return accuracy
-
-
-def eval_multiple_batches(model, generators):
-    total_accuracy = 0
-    for generator in generators:
-        idx, batch = next(generator)
-        x, y = batch
-        accuracy = eval(model, x, y, F.mse_loss)
-        total_accuracy += accuracy
-
-    return total_accuracy / len(generators)
-
-
-def test_rnn_addition_two_batches_new():
-    _seed_everything()
-    DEVICE = torch.device("cuda:0")
-    devices = [torch.device("cuda:0")]
-    # devices = [torch.device("cuda:0"), torch.device("cuda:1")]
-
-    sequence_length = 20
-
-    batches = []
-    generators = []
-    for i in range(2):
-        data_generator = DummyDataGenerator(
-            *dataset_generator(5000, sequence_length), DEVICE
-        )
-        generators.append(data_generator)
-        batches.append(next(data_generator))
-
-    net = Net().to(DEVICE)
-
-    cost_function = F.mse_loss
-
-    ndes = RNNnDESOptimizerNew(
-        model=net,
-        criterion=cost_function,
-        data_gen=None,
-        budget=55000,
-        history=16,
-        nn_train=True,
-        lower=-2,
-        upper=2,
-        tol=1e-6,
-        worst_fitness=3,
-        device=DEVICE,
-        log_dir=f"rnn_addition_{sequence_length}",
-        batches=batches,
-        devices=devices
-    )
-
-    best = ndes.run()
-
-    accuracy = eval_multiple_batches(best, generators)
-
-    return accuracy
-
-
-def test_rnn_addition_two_batches():
-    accuracy_old = test_rnn_addition_two_batches_old()
-    accuracy_new = test_rnn_addition_two_batches_new()
-
-    assert abs(accuracy_old - accuracy_new) < 0.005, \
-        f"Model don't match: old_acc = {accuracy_old}, new_acc = {accuracy_new}"
+    return F.mse_loss(out, y).item()
 
 
 def _seed_everything():
@@ -247,110 +56,122 @@ def _seed_everything():
     torch.backends.cudnn.benchmark = False
 
 
-def test_rnn_addition_three_batches_old():
-    _seed_everything()
-    DEVICE = torch.device("cuda:0")
+def test_func_wrapper(x_val, y_val):
+    def test_func(model):
+        model.eval()
+        with torch.no_grad():
+            out = model(x_val)
+            loss = F.mse_loss(out, y_val)
+        model.train()
+        return loss
 
-    sequence_length = 20
+    return test_func
 
-    generators = []
-    for i in range(3):
-        data_generator = DummyDataGenerator(
-            *dataset_generator(5000, sequence_length), DEVICE
-        )
-        generators.append(data_generator)
-    cycler = cycle_data_generators(generators)
 
+def test_rnn_addition_old(data_gen, kwargs, test_func=None):
     net = Net().to(DEVICE)
-
-    cost_function = F.mse_loss
 
     ndes = RNNnDESOptimizerOld(
         model=net,
-        criterion=cost_function,
-        data_gen=cycler,
-        budget=55000,
-        history=16,
-        nn_train=True,
-        lower=-2,
-        upper=2,
-        tol=1e-6,
-        worst_fitness=3,
-        device=DEVICE,
-        log_dir=f"rnn_addition_{sequence_length}",
+        data_gen=data_gen,
+        batches=None,
+        **kwargs
     )
 
-    best = ndes.run()
+    best, fitnesses_iterations = ndes.run(test_func)
 
-    accuracy = eval_multiple_batches(best, generators)
+    plot_fitnesses(fitnesses_iterations)
 
-    return accuracy
+    return best
 
 
-def test_rnn_addition_three_batches_new():
-    _seed_everything()
-    DEVICE = torch.device("cuda:0")
-    devices = [torch.device("cuda:0")]
-    # devices = [torch.device("cuda:0"), torch.device("cuda:1")]
-
-    sequence_length = 20
-
-    batches = []
-    generators = []
-    for i in range(3):
-        data_generator = DummyDataGenerator(
-            *dataset_generator(5000, sequence_length), DEVICE
-        )
-        generators.append(data_generator)
-        batches.append(next(data_generator))
-
+def test_rnn_addition_new(batches, kwargs, test_func=None):
     net = Net().to(DEVICE)
-
-    cost_function = F.mse_loss
 
     ndes = RNNnDESOptimizerNew(
         model=net,
-        criterion=cost_function,
         data_gen=None,
-        budget=55000,
-        history=16,
-        nn_train=True,
-        lower=-2,
-        upper=2,
-        tol=1e-6,
-        worst_fitness=3,
-        device=DEVICE,
-        log_dir=f"rnn_addition_{sequence_length}",
         batches=batches,
-        devices=devices
+        devices=DEVICES,
+        **kwargs
     )
 
-    best = ndes.run()
+    best, fitnesses_iterations = ndes.run(test_func)
 
-    accuracy = eval_multiple_batches(best, generators)
+    plot_fitnesses(fitnesses_iterations)
 
-    return accuracy
-
-
-def test_rnn_addition_three_batches():
-    accuracy_old = test_rnn_addition_three_batches_old()
-    accuracy_new = test_rnn_addition_three_batches_new()
-
-    assert abs(accuracy_old - accuracy_new) < 0.005, \
-        f"Models don't match: old_acc = {accuracy_old}, new_acc = {accuracy_new}"
+    return best
 
 
-def draw_predictions(model, x_cpu, y_cpu):
-    x_cuda = x_cpu.to(torch.device("cuda:0"))
+def test_rnn_addition_single_batch_generic():
+    _seed_everything()
 
-    model.eval()
-    with torch.no_grad():
-        preds = model(x_cuda).cpu()
-        plt.scatter(x_cpu, y_cpu, c='black')
-        plt.scatter(x_cpu, preds, c='red')
-        plt.show()
-    model.train()
+    budget = 72000
+    kwargs = {
+        "criterion": F.mse_loss,
+        "budget": budget,
+        "history": 16,
+        "nn_train": True,
+        "lower": -2,
+        "upper": 2,
+        "tol": 1e-6,
+        "worst_fitness": 3,
+        "device": DEVICE,
+        "log_dir": f"rnn_addition_{SEQUENCE_LENGTH}"
+    }
+
+    batches, data_gen = generate_dataset(1)
+
+    # model_old = test_rnn_addition_single_batch_old(data_gen)
+    model_new = test_rnn_addition_new(batches, kwargs)
+
+    test_batches, _ = generate_dataset(1, 1000)
+    accuracy_old = 0.0082
+    # accuracy_old = eval(model_old, test_batches[0], criterion)
+    # print(eval_old)
+    accuracy_new = eval(model_new, test_batches[0])
+    print(accuracy_old, accuracy_new)
+
+    assert abs(accuracy_new - accuracy_old) < 0.0005, \
+        f"Model don't match: old_acc = {accuracy_old}, new_acc = {accuracy_new}"
+
+
+def test_rnn_addition_two_batches_generic():
+    _seed_everything()
+
+    budget = 60000
+    test_batches, _ = generate_dataset(1, 1000)
+    _, (x_val, y_val) = test_batches[0]
+    kwargs = {
+        "criterion": F.mse_loss,
+        "budget": budget,
+        "history": 16,
+        "nn_train": True,
+        "lower": -2,
+        "upper": 2,
+        "tol": 1e-6,
+        "worst_fitness": 3,
+        "device": DEVICE,
+        "log_dir": f"rnn_addition_{SEQUENCE_LENGTH}",
+        "x_val": x_val,
+        "y_val": y_val
+    }
+
+    batches, data_gen = generate_dataset(2, 5000)
+
+    test_func = test_func_wrapper(x_val, y_val)
+    # model_old = test_rnn_addition_old(data_gen, kwargs, test_func)
+    model_new = test_rnn_addition_new(batches, kwargs, test_func)
+
+    accuracy_old = 0.0095
+    # accuracy_old = eval(model_old, test_batches[0])
+    # print(eval_old)
+    accuracy_new = eval(model_new, test_batches[0])
+    print(accuracy_old, accuracy_new)
+
+    assert abs(accuracy_new - accuracy_old) < 0.0005, \
+        f"Model don't match: old_acc = {accuracy_old}, new_acc = {accuracy_new}"
 
 
 if __name__ == "__main__":
-    test_rnn_addition_single_batch()
+    test_rnn_addition_single_batch_generic()
