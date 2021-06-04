@@ -21,7 +21,8 @@ x, y = None, None
 def get_batches():
     # x = torch.unsqueeze(torch.linspace(-10, 10, 1000), dim=1)  # x data (tensor), shape=(100, 1)
     global x, y
-    x = torch.unsqueeze(torch.linspace(-1, 1, 100), dim=1)
+    # x = torch.unsqueeze(torch.linspace(-1, 1, 100), dim=1)
+    x = torch.unsqueeze(torch.linspace(-1, 1, 1000), dim=1)
     y = x.pow(2) + 0.2 * torch.rand(x.size())
     # y = torch.sin(x) + 0.2*torch.rand(x.size())                 # noisy y data (tensor), shape=(100, 1)
 
@@ -61,8 +62,9 @@ def cycle(batches):
 
 def test():
     batches = get_batches()
-    old_score = test_old(batches)
-    old_score = 0.0031
+    # old_score = test_old(batches)
+    # old_score = 0.0031
+    old_score = 0.0035
     new_score = test_new(batches)
 
     print(old_score, new_score)
@@ -82,7 +84,8 @@ def test_old(batches):
         restarts=1,
         lower=-2.,
         upper=2.,
-        budget=35000,
+        # budget=35000,
+        budget=60000,
         tol=1e-6,
         nn_train=True,
         history=16,
@@ -120,7 +123,8 @@ def test_new(batches):
         restarts=1,
         lower=-2.,
         upper=2.,
-        budget=35000,
+        # budget=35000,
+        budget=60000,
         tol=1e-6,
         nn_train=True,
         history=16,
