@@ -74,7 +74,6 @@ def test_rnn_addition_old(data_gen, kwargs, test_func=None):
     ndes = RNNnDESOptimizerOld(
         model=net,
         data_gen=data_gen,
-        batches=None,
         **kwargs
     )
 

@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
@@ -9,6 +10,10 @@ import random
 
 from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
 from ndes_optimizer_rewrited import BasenDESOptimizer as BasenDESOptimizerNew
+
+
+DEVICE = torch.device("cuda:0")
+DEVICES = [torch.device("cuda:0")]
 
 
 class Net(nn.Module):
@@ -43,8 +48,8 @@ def _seed_everything():
 
 def cycle(batches):
     while True:
-        for idx, batch in enumerate(batches):
-            yield idx, batch
+        for batch in batches:
+            yield batch
 
 
 class MyDataset(data.Dataset):
@@ -65,10 +70,9 @@ def extract_two_class_dataset_mnist(dataset):
     return samples
 
 
-def check_accuracy(model):
+def get_test_data():
     mean = (0.2860405969887955,)
     std = (0.3530242445149223,)
-    DEVICE = torch.device("cuda:0")
 
     test_dataset = datasets.FashionMNIST(
         '../data', train=False, download=True,
@@ -82,27 +86,29 @@ def check_accuracy(model):
     # CNN expects batches to be of shape (n_samples, channels, height_width)
     test_samples = (test_samples[0].unsqueeze(1).to(DEVICE), test_samples[1].to(DEVICE))
     my_test_dataset = MyDataset(test_samples)
-    test_data_loader = data.DataLoader(my_test_dataset, 1024)
 
+    # return data.DataLoader(my_test_dataset, 1024)
+    test_data_loader = data.DataLoader(my_test_dataset, len(my_test_dataset))
+    x_test, y_test = next(iter(test_data_loader))
+    return x_test, y_test
+
+
+def check_accuracy(model, x_val, y_val):
     num_correct = 0
     num_samples = 0
     model.eval()
-
     with torch.no_grad():
-        for x, y in test_data_loader:
-            scores = model(x)
-            _, predictions = scores.max(1)
-            num_correct += (predictions == y).sum()
-            num_samples += predictions.size(0)
-
-        print(f'Got {num_correct} / {num_samples} with accuracy {float(num_correct) / float(num_samples) * 100:.2f}')
-
+        scores = model(x_val)
+        _, predictions = scores.max(1)
+        num_correct += (predictions == y_val).sum()
+        num_samples += predictions.size(0)
+        # print(f'Got {num_correct} / {num_samples} with accuracy {float(num_correct) / float(num_samples) * 100:.2f}')
     model.train()
+
+    return float(num_correct) / float(num_samples) * 100
 
 
 def get_train_batches():
-    DEVICE = torch.device("cuda:0")
-
     mean = (0.2860405969887955,)
     std = (0.3530242445149223,)
     train_dataset = datasets.FashionMNIST(
@@ -119,83 +125,99 @@ def get_train_batches():
     my_dataset = MyDataset(samples)
     # data_loader = data.DataLoader(my_dataset, len(samples[1]))
     data_loader = data.DataLoader(my_dataset, 1024)
-    batches = [x for x in data_loader]
-
-    return batches
-
-
-def test_old():
-    DEVICE = torch.device("cuda:0")
-
-    batches = get_train_batches()
+    batches = [(idx, x) for idx, x in enumerate(data_loader)]
     data_gen = cycle(batches)
 
+    return batches, data_gen
+
+
+def plot_fitnesses(fitnesses_iterations):
+    fig, axs = plt.subplots(len(fitnesses_iterations), squeeze=False)
+    # plt.yscale("log")
+    for idx, fitnesses in enumerate(fitnesses_iterations):
+        axs[idx, 0].plot(range(len(fitnesses)), fitnesses)
+    plt.show()
+
+
+def test_old(data_gen, kwargs, test_func=None):
     model = Net().to(DEVICE)
-
-    check_accuracy(model)
-
-    criterion = nn.CrossEntropyLoss()
 
     des_optim = BasenDESOptimizerOld(
-        model,
-        criterion,
-        data_gen,
-        restarts=2,
-        lower=-2.,
-        upper=2.,
-        budget=100000,
-        tol=1e-6,
-        nn_train=True,
-        lambda_=4000,
-        history=16,
-        log_best_val=False,
-        device=DEVICE
+        model=model,
+        data_gen=data_gen,
+        **kwargs
     )
 
-    model = des_optim.run()
+    best, fitnesses_iterations = des_optim.run(test_func)
 
-    check_accuracy(model)
+    plot_fitnesses(fitnesses_iterations)
+
+    return best
 
 
-def test_new():
-    DEVICE = torch.device("cuda:0")
-    devices = [torch.device("cuda:0")]
-    # devices = [torch.device("cuda:0"), torch.device("cuda:1")]
-
-    batches = get_train_batches()
-    batches = [(idx, x) for idx, x in enumerate(batches)]
-
+def test_new(batches, kwargs, test_func=None):
     model = Net().to(DEVICE)
 
-    check_accuracy(model)
-
-    criterion = nn.CrossEntropyLoss()
-
     des_optim = BasenDESOptimizerNew(
-        model,
-        criterion,
-        None,
-        restarts=2,
-        lower=-2.,
-        upper=2.,
-        budget=100000,
-        tol=1e-6,
-        nn_train=True,
-        lambda_=4000,
-        history=16,
-        log_best_val=False,
-        device=DEVICE,
-        devices=devices,
-        batches=batches
+        model=model,
+        data_gen=None,
+        batches=batches,
+        devices=DEVICES,
+        **kwargs
     )
 
-    model = des_optim.run()
+    best, fitnesses_iterations = des_optim.run(test_func)
 
-    check_accuracy(model)
+    plot_fitnesses(fitnesses_iterations)
+
+    return best
+
+
+def test_func_wrapper(x_val, y_val):
+    criterion = nn.CrossEntropyLoss()
+
+    def test_func(model):
+        model.eval()
+        with torch.no_grad():
+            out = model(x_val)
+            loss = criterion(out, y_val)
+        model.train()
+        return loss
+
+    return test_func
+
+
+def test():
+    _seed_everything()
+
+    x_val, y_val = get_test_data()
+    kwargs = {
+        "restarts": 2,
+        "criterion": nn.CrossEntropyLoss(),
+        "budget": 100000,
+        "history": 16,
+        "nn_train": True,
+        "lower": -2,
+        "upper": 2,
+        "tol": 1e-6,
+        "worst_fitness": 3,
+        "device": DEVICE,
+        "lambda_": 4000,
+        "x_val": x_val,
+        "y_val": y_val
+    }
+
+    train_batches, train_data_gen = get_train_batches()
+    test_func = test_func_wrapper(x_val, y_val)
+    # model_old = test_old(train_data_gen, kwargs, test_func)
+    model_new = test_new(train_batches, kwargs, test_func)
+
+    accuracy_old = 95.8
+    # accuracy_old = check_accuracy(model_old, x_val, y_val)
+    accuracy_new = check_accuracy(model_new, x_val, y_val)
+
+    assert abs(accuracy_old - accuracy_new) < 0.5, "Models don't match"
 
 
 if __name__ == "__main__":
-    _seed_everything()
-    # test_new()
-    test_old()
-    test_old()
+    test()
