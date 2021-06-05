@@ -174,28 +174,25 @@ class BasenDESOptimizer:
 
     def _objective_function_population(self, population):
         fitnesses = []
-        # step = 15
-        # num_devices = len(self.devices)
-        #
-        # for i in range(0, population.shape[1], step):
-        #     current_device_idx = (i//step) % num_devices
-        #     current_device = self.devices[current_device_idx]
-        #     model = self.device_to_model[str(current_device)]
-        #
-        #     num_individuals_to_evaluate = min(population.shape[1] - i, step)
-        #     for j in range(num_individuals_to_evaluate):
-        #         batch = self.get_next_batch(current_device)
-        #         individual = population[:, i+j]
-        #         fitnesses.append(self._infer_for_population_algorithm(individual, model, batch))
-
-        current_device = self.devices[0]
-        model = self.device_to_model[str(current_device)]
+        device_to_population = self._transfer_population_to_devices(population)
+        num_devices = len(self.devices)
         for i in range(population.shape[1]):
+            current_device = self.devices[i % num_devices]
+            model = self.device_to_model[str(current_device)]
+            population = device_to_population[str(current_device)]
             batch = self.get_next_batch(current_device)
+
             individual = population[:, i]
             fitnesses.append(self._infer_for_population_algorithm(individual, model, batch))
 
         return fitnesses
+
+    def _transfer_population_to_devices(self, population):
+        device_to_population = {}
+        for device in self.devices:
+            device_to_population[str(device)] = population.to(device)
+
+        return device_to_population
 
     # @profile
     def _infer_for_population_algorithm(self, weights, model, batch):

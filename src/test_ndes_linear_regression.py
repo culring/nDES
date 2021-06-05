@@ -11,7 +11,8 @@ from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
 
 DEVICE = torch.device("cuda:0")
 DEVICES = [torch.device("cuda:0")]
-DRAW_CHARTS = True
+#DEVICES = [torch.device("cuda:0"), torch.device("cuda:1")]
+DRAW_CHARTS = False
 
 
 class Net(torch.nn.Module):
