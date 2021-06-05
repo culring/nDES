@@ -1,4 +1,6 @@
 import matplotlib.pyplot as plt
+import numpy as np
+import random
 import torch
 import torch.nn.functional as F
 import torch.utils.data as Data
@@ -8,38 +10,8 @@ from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
 
 
 DEVICE = torch.device("cuda:0")
-torch.manual_seed(1)    # reproducible
-x_test_cpu = torch.unsqueeze(torch.linspace(-1, 1, 100), dim=1)
-y_test_cpu = x_test_cpu.pow(2) + 0.2 * torch.rand(x_test_cpu.size())
-x_test = x_test_cpu.clone().to(DEVICE)
-y_test = y_test_cpu.clone().to(DEVICE)
-
+DEVICES = [torch.device("cuda:0")]
 DRAW_CHARTS = True
-
-x, y = None, None
-
-def get_batches():
-    # x = torch.unsqueeze(torch.linspace(-10, 10, 1000), dim=1)  # x data (tensor), shape=(100, 1)
-    global x, y
-    # x = torch.unsqueeze(torch.linspace(-1, 1, 100), dim=1)
-    x = torch.unsqueeze(torch.linspace(-1, 1, 1000), dim=1)
-    y = x.pow(2) + 0.2 * torch.rand(x.size())
-    # y = torch.sin(x) + 0.2*torch.rand(x.size())                 # noisy y data (tensor), shape=(100, 1)
-
-    x_cuda = x.to(DEVICE)
-    y_cuda = y.to(DEVICE)
-
-    torch_dataset = Data.TensorDataset(x_cuda, y_cuda)
-
-    BATCH_SIZE = 64
-    # BATCH_SIZE = x_cuda.shape[1]
-    loader = Data.DataLoader(
-        dataset=torch_dataset,
-        batch_size=BATCH_SIZE)
-
-    batches = [(idx, x) for idx, x in enumerate(loader)]
-
-    return batches
 
 
 class Net(torch.nn.Module):
@@ -54,142 +26,152 @@ class Net(torch.nn.Module):
         return x
 
 
+def get_train_data():
+    x = torch.unsqueeze(torch.linspace(-1, 1, 1000), dim=1).to(DEVICE)
+    y = x.pow(2) + 0.2 * torch.rand(x.size()).to(DEVICE)
+
+    torch_dataset = Data.TensorDataset(x, y)
+
+    loader = Data.DataLoader(dataset=torch_dataset, batch_size=64)
+
+    batches = [(idx, z) for idx, z in enumerate(loader)]
+    data_gen = cycle(batches)
+
+    return batches, data_gen
+
+
+def get_test_data():
+    x = torch.unsqueeze(torch.linspace(-1, 1, 200), dim=1).to(DEVICE)
+    y = x.pow(2) + 0.2 * torch.rand(x.size()).to(DEVICE)
+
+    return x, y
+
+
 def cycle(batches):
     while True:
         for batch in batches:
             yield batch
 
 
+def _seed_everything():
+    random.seed(0)
+    np.random.seed(0)
+    torch.manual_seed(0)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
 def test():
-    batches = get_batches()
-    # old_score = test_old(batches)
-    # old_score = 0.0031
-    old_score = 0.0035
-    new_score = test_new(batches)
+    _seed_everything()
 
+    train_batches, train_data_gen = get_train_data()
+    x_val, y_val = get_test_data()
+    kwargs = {
+        "criterion": F.mse_loss,
+        # "budget": 60000,
+        "budget": 100000,
+        "history": 16,
+        "nn_train": True,
+        "lower": -2,
+        "upper": 2,
+        "tol": 1e-6,
+        "device": DEVICE,
+        "x_val": x_val,
+        "y_val": y_val
+    }
+    test_func = test_func_wrapper(x_val, y_val)
+
+    # model_old = test_old(train_data_gen, kwargs, test_func)
+    model_new = test_new(train_batches, kwargs, test_func)
+
+    old_score = 0.0048
+    new_score = eval(model_new, x_val, y_val)
+    # old_score = eval(model_old, x_val, y_val)
     print(old_score, new_score)
-
-    assert abs(old_score - new_score) <= 0.0005, "The difference between the scores is too high."
-
-
-def test_old(batches):
-    data_gen = cycle(batches)
-    model = get_model().to(DEVICE)
-    criterion = F.mse_loss
-
-    des_optim = BasenDESOptimizerOld(
-        model,
-        criterion,
-        data_gen,
-        restarts=1,
-        lower=-2.,
-        upper=2.,
-        # budget=35000,
-        budget=60000,
-        tol=1e-6,
-        nn_train=True,
-        history=16,
-        log_best_val=False,
-        device=DEVICE,
-
-        x_val=x_test,
-        y_val=y_test
-    )
-
-    model, fitnesses_iterations = des_optim.run(evaluate_model)
+    # print(old_score)
 
     if DRAW_CHARTS:
-        fig, axs = plt.subplots(len(fitnesses_iterations), squeeze=False)
-        for idx, fitnesses in enumerate(fitnesses_iterations):
-            axs[idx, 0].plot(range(len(fitnesses)), fitnesses)
-        plt.show()
+        draw_predictions(model_new, x_val, y_val)
+        # draw_predictions(model_old, x_val, y_val)
 
-        draw_predictions(model, x_test_cpu, y_test_cpu)
-
-    # print("eval train data: ", evaluate_model_train_data(model))
-
-    return evaluate_model(model)
+    assert abs(old_score - new_score) <= 0.0006, "The difference between the scores is too high."
 
 
-def test_new(batches):
-    model = get_model().to(DEVICE)
-    criterion = F.mse_loss
-    devices = [torch.device("cuda:0")]
+def test_func_wrapper(x_val, y_val):
+    def test_func(model):
+        return eval(model, x_val, y_val)
 
-    des_optim = BasenDESOptimizerNew(
-        model,
-        criterion,
-        None,
-        restarts=1,
-        lower=-2.,
-        upper=2.,
-        # budget=35000,
-        budget=60000,
-        tol=1e-6,
-        nn_train=True,
-        history=16,
-        log_best_val=False,
-        device=DEVICE,
-        devices=devices,
+    return test_func
+
+
+def test_old(data_gen, kwargs, test_func=None):
+    net = get_model()
+
+    ndes = BasenDESOptimizerOld(
+        model=net,
+        data_gen=data_gen,
+        **kwargs
+    )
+
+    best, fitnesses_iterations = ndes.run(test_func)
+
+    if DRAW_CHARTS:
+        plot_fitnesses(fitnesses_iterations)
+
+    return best
+
+
+def test_new(batches, kwargs, test_func=None):
+    net = get_model()
+
+    ndes = BasenDESOptimizerNew(
+        model=net,
+        data_gen=None,
         batches=batches,
-
-        x_val=x_test,
-        y_val=y_test
+        devices=DEVICES,
+        **kwargs
     )
 
-    model, fitnesses_iterations = des_optim.run(evaluate_model)
+    best, fitnesses_iterations = ndes.run(test_func)
 
     if DRAW_CHARTS:
-        fig, axs = plt.subplots(len(fitnesses_iterations), squeeze=False)
-        # plt.yscale("log")
-        for idx, fitnesses in enumerate(fitnesses_iterations):
-            axs[idx, 0].plot(range(len(fitnesses)), fitnesses)
-        plt.show()
+        plot_fitnesses(fitnesses_iterations)
 
-        draw_predictions(model, x_test_cpu, y_test_cpu)
-
-    # print("eval train data: ", evaluate_model_train_data(model))
-
-    return evaluate_model(model)
+    return best
 
 
 def get_model():
-    return Net(1, 10, 1)
+    return Net(1, 10, 1).to(DEVICE)
 
 
-def evaluate_model(model):
+def eval(model, x_val, y_val):
     model.eval()
     with torch.no_grad():
-        preds = model(x_test)
+        out = model(x_val)
+        loss = F.mse_loss(out, y_val)
     model.train()
-
-    return F.mse_loss(preds, y_test)
-
-
-def evaluate_model_train_data(model):
-    model = model.cpu()
-
-    model.eval()
-    with torch.no_grad():
-        preds = model(x)
-    preds = preds.cpu()
-    model.train()
-
-    model.cuda()
-
-    return F.mse_loss(preds, y)
+    return loss
 
 
-def draw_predictions(model, x_cpu, y_cpu):
-    x_cuda = x_cpu.to(DEVICE)
+def draw_predictions(model, x, y):
+    x_cpu = x.cpu()
+    y_cpu = y.cpu()
 
     model.eval()
     with torch.no_grad():
-        preds = model(x_cuda).cpu()
+        preds = model(x).cpu()
         plt.scatter(x_cpu, y_cpu, c='black')
         plt.scatter(x_cpu, preds, c='red')
         plt.show()
     model.train()
+
+
+def plot_fitnesses(fitnesses_iterations):
+    fig, axs = plt.subplots(len(fitnesses_iterations), squeeze=False)
+    # plt.yscale("log")
+    for idx, fitnesses in enumerate(fitnesses_iterations):
+        axs[idx, 0].plot(range(len(fitnesses)), fitnesses)
+    plt.show()
 
 
 if __name__ == "__main__":
