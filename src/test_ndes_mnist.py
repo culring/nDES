@@ -7,6 +7,7 @@ import torch.utils.data as data
 from torchvision import datasets, transforms
 
 import random
+from timeit import default_timer as timer
 
 from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
 from ndes_optimizer_rewrited import BasenDESOptimizer as BasenDESOptimizerNew
@@ -14,6 +15,7 @@ from ndes_optimizer_rewrited import BasenDESOptimizer as BasenDESOptimizerNew
 
 DEVICE = torch.device("cuda:0")
 DEVICES = [torch.device("cuda:0")]
+DRAW_CHARTS = False
 
 
 class Net(nn.Module):
@@ -150,7 +152,8 @@ def test_old(data_gen, kwargs, test_func=None):
 
     best, fitnesses_iterations = des_optim.run(test_func)
 
-    plot_fitnesses(fitnesses_iterations)
+    if DRAW_CHARTS:
+        plot_fitnesses(fitnesses_iterations)
 
     return best
 
@@ -168,7 +171,8 @@ def test_new(batches, kwargs, test_func=None):
 
     best, fitnesses_iterations = des_optim.run(test_func)
 
-    plot_fitnesses(fitnesses_iterations)
+    if DRAW_CHARTS:
+        plot_fitnesses(fitnesses_iterations)
 
     return best
 
@@ -220,4 +224,8 @@ def test():
 
 
 if __name__ == "__main__":
+    torch.multiprocessing.set_start_method('spawn')
+    begin = timer()
     test()
+    end = timer()
+    print(end - begin)

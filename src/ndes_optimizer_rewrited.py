@@ -1,6 +1,7 @@
 import copy
 import gc
 from math import sqrt
+import time
 from timeit import default_timer as timer
 
 import cma
@@ -13,6 +14,69 @@ from population_initializers import (
     XavierMVNPopulationInitializer,
 )
 from utils import seconds_to_human_readable
+
+
+def test(size):
+    return size*[0]
+
+
+def wrapper(*args):
+    import cProfile
+    cProfile.runctx('_evaluate_device(*args)', globals(), locals(), 'process.prof')
+
+
+def _evaluate_device(individuals, model, batches, start_batch_idx, queue, context):
+    fitnesses = []
+    print("hello")
+
+    for i in range(individuals.shape[1]):
+        individual = individuals[:, i]
+        batch_idx = (start_batch_idx + i) % len(batches)
+        batch = (batch_idx, batches[batch_idx])
+        fitness = _infer_for_population_algorithm(individual, model, batch, context)
+        fitnesses.append(fitness)
+
+    queue.put(fitnesses)
+
+    print("bye")
+
+
+# @profile
+def _infer_for_population_algorithm(weights, model, batch, context):
+    """Custom objective function for the DES optimizer."""
+    batch_idx, (b_x, y) = batch
+    _reweight_model(model, weights, context)
+    if context["secondary_mutation"] == SecondaryMutation.Gradient:
+        gradient = []
+        with torch.enable_grad():
+            model.zero_grad()
+            out = model(b_x)
+            loss = context["criterion"](out, y)
+            loss.backward()
+            for param in model.parameters():
+                gradient.append(param.grad.flatten())
+            gradient = torch.cat(gradient, 0)
+            # In-place mutation of the weights
+            weights -= context["lr"] * gradient
+    else:
+        out = model(b_x)
+        loss = context["criterion"](out, y)
+    loss = loss.item()
+    # if self.use_fitness_ewma:
+    #     return self.ewma_logger.update_batch(batch_idx, loss)
+    return loss
+
+
+def _reweight_model(model, individual, context):
+    for param, layer in zip(model.parameters(), unzip_layers(individual, context)):
+        param.data.copy_(layer)
+
+
+def unzip_layers(zipped_layers, context):
+    start = 0
+    for offset, shape in context["_layers_offsets_shapes"]:
+        yield zipped_layers[start:offset].view(shape)
+        start = offset
 
 
 class FitnessEWMALogger:
@@ -172,18 +236,75 @@ class BasenDESOptimizer:
             yield zipped_layers[start:offset].view(shape)
             start = offset
 
+    # def _objective_function_population(self, population):
+    #     fitnesses = []
+    #     device_to_population = self._transfer_population_to_devices(population)
+    #     num_devices = len(self.devices)
+    #     for i in range(population.shape[1]):
+    #         current_device = self.devices[i % num_devices]
+    #         model = self.device_to_model[str(current_device)]
+    #         population = device_to_population[str(current_device)]
+    #         batch = self.get_next_batch(current_device)
+    #
+    #         individual = population[:, i]
+    #         fitnesses.append(self._infer_for_population_algorithm(individual, model, batch))
+    #
+    #     return fitnesses
+
     def _objective_function_population(self, population):
         fitnesses = []
+
         device_to_population = self._transfer_population_to_devices(population)
         num_devices = len(self.devices)
-        for i in range(population.shape[1]):
+        num_individuals_per_device = population.shape[1] // num_devices
+        remaining_individuals = population.shape[1] - num_individuals_per_device * num_devices
+        current_individual_idx = 0
+
+        queues = []
+        processes = []
+
+        for i in range(num_devices):
+            num_individuals = num_individuals_per_device
+            if remaining_individuals > 0:
+                remaining_individuals -= 1
+                num_individuals += 1
+
             current_device = self.devices[i % num_devices]
             model = self.device_to_model[str(current_device)]
             population = device_to_population[str(current_device)]
-            batch = self.get_next_batch(current_device)
+            batches = self.device_to_batches[str(current_device)]
 
-            individual = population[:, i]
-            fitnesses.append(self._infer_for_population_algorithm(individual, model, batch))
+            end_individual_idx = current_individual_idx + num_individuals
+            individuals = population[:, current_individual_idx:end_individual_idx]
+
+            queue = torch.multiprocessing.Queue()
+            queues.append(queue)
+
+            context = {
+                "_layers_offsets_shapes": self._layers_offsets_shapes,
+                "secondary_mutation": self.secondary_mutation,
+                "criterion": self.criterion,
+                "lr": self.lr
+            }
+            process = torch.multiprocessing.Process(target=_evaluate_device,
+                                                    args=(individuals, model, batches, self.batch_idx, queue, context))
+
+            # process = torch.multiprocessing.Process(target=wrapper,
+            #                                         args=(individuals, model, batches, self.batch_idx, queue, context))
+
+            print("sprawning process")
+            process.start()
+            processes.append(process)
+
+            current_individual_idx += num_individuals
+            self.batch_idx = (self.batch_idx + num_individuals) % len(batches)
+
+        print("waiting for queues")
+        for queue in queues:
+            fitnesses.extend(queue.get())
+        print("joining processes")
+        for process in processes:
+            process.join()
 
         return fitnesses
 
@@ -193,31 +314,6 @@ class BasenDESOptimizer:
             device_to_population[str(device)] = population.to(device)
 
         return device_to_population
-
-    # @profile
-    def _infer_for_population_algorithm(self, weights, model, batch):
-        """Custom objective function for the DES optimizer."""
-        batch_idx, (b_x, y) = batch
-        self._reweight_model(model, weights)
-        if self.secondary_mutation == SecondaryMutation.Gradient:
-            gradient = []
-            with torch.enable_grad():
-                model.zero_grad()
-                out = model(b_x)
-                loss = self.criterion(out, y)
-                loss.backward()
-                for param in model.parameters():
-                    gradient.append(param.grad.flatten())
-                gradient = torch.cat(gradient, 0)
-                # In-place mutation of the weights
-                weights -= self.lr * gradient
-        else:
-            out = model(b_x)
-            loss = self.criterion(out, y)
-        loss = loss.item()
-        if self.use_fitness_ewma:
-            return self.ewma_logger.update_batch(batch_idx, loss)
-        return loss
 
     def _infer_for_individual_algorithm(self, weights):
         """Custom objective function for the DES optimizer."""

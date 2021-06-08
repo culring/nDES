@@ -4,6 +4,8 @@ import random
 import torch
 import torch.nn.functional as F
 
+from timeit import default_timer as timer
+
 from ndes_optimizer_rewrited import RNNnDESOptimizer as RNNnDESOptimizerNew
 from ndes_optimizer_original import RNNnDESOptimizer as RNNnDESOptimizerOld
 from utils_rnn import DummyDataGenerator
@@ -173,4 +175,8 @@ def test_rnn_addition_two_batches_generic():
 
 
 if __name__ == "__main__":
+    torch.multiprocessing.set_start_method('spawn')
+    begin = timer()
     test_rnn_addition_single_batch_generic()
+    end = timer()
+    print(end - begin)
