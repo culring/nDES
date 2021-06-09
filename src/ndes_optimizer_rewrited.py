@@ -25,9 +25,17 @@ def wrapper(*args):
     cProfile.runctx('_evaluate_device(*args)', globals(), locals(), 'process.prof')
 
 
-def _evaluate_device(individuals, model, batches, start_batch_idx, queue, context):
+def worker(model, batches, queue_query, queue_result, job_id):
+    while True:
+        print(f"[job_{job_id}] waiting for queue")
+        individuals, start_batch_idx, context = queue_query.get()
+        print(f"[job_{job_id}] got from queue")
+        fitnesses = _evaluate_device(individuals, model, batches, start_batch_idx, context)
+        queue_result.put(fitnesses)
+
+
+def _evaluate_device(individuals, model, batches, start_batch_idx, context):
     fitnesses = []
-    print("hello")
 
     for i in range(individuals.shape[1]):
         individual = individuals[:, i]
@@ -36,9 +44,7 @@ def _evaluate_device(individuals, model, batches, start_batch_idx, queue, contex
         fitness = _infer_for_population_algorithm(individual, model, batch, context)
         fitnesses.append(fitness)
 
-    queue.put(fitnesses)
-
-    print("bye")
+    return fitnesses
 
 
 # @profile
@@ -180,6 +186,10 @@ class BasenDESOptimizer:
         self.device_to_model = {}
         self.init_models(model)
 
+        self.jobs = []
+        self.queues = []
+        self.init_jobs()
+
     def init_batches(self, batches):
         for device in self.devices:
             batches_device = []
@@ -191,6 +201,19 @@ class BasenDESOptimizer:
     def init_models(self, model):
         for device in self.devices:
             self.device_to_model[str(device)] = copy.deepcopy(model).to(device)
+
+    def init_jobs(self):
+        for i, device in enumerate(self.devices):
+            model = self.device_to_model[str(device)]
+            batches = self.device_to_batches[str(device)]
+            queue_query = torch.multiprocessing.Queue()
+            queue_result = torch.multiprocessing.Queue()
+            self.queues.append((queue_query, queue_result))
+            job = torch.multiprocessing.Process(target=worker,
+                                                args=(model, batches, queue_query, queue_result, i))
+            job.start()
+            self.jobs.append(job)
+        time.sleep(3)
 
     def zip_layers(self, layers_iter):
         """Concatenate flattened layers into a single 1-D tensor.
@@ -236,21 +259,6 @@ class BasenDESOptimizer:
             yield zipped_layers[start:offset].view(shape)
             start = offset
 
-    # def _objective_function_population(self, population):
-    #     fitnesses = []
-    #     device_to_population = self._transfer_population_to_devices(population)
-    #     num_devices = len(self.devices)
-    #     for i in range(population.shape[1]):
-    #         current_device = self.devices[i % num_devices]
-    #         model = self.device_to_model[str(current_device)]
-    #         population = device_to_population[str(current_device)]
-    #         batch = self.get_next_batch(current_device)
-    #
-    #         individual = population[:, i]
-    #         fitnesses.append(self._infer_for_population_algorithm(individual, model, batch))
-    #
-    #     return fitnesses
-
     def _objective_function_population(self, population):
         fitnesses = []
 
@@ -260,9 +268,6 @@ class BasenDESOptimizer:
         remaining_individuals = population.shape[1] - num_individuals_per_device * num_devices
         current_individual_idx = 0
 
-        queues = []
-        processes = []
-
         for i in range(num_devices):
             num_individuals = num_individuals_per_device
             if remaining_individuals > 0:
@@ -270,15 +275,11 @@ class BasenDESOptimizer:
                 num_individuals += 1
 
             current_device = self.devices[i % num_devices]
-            model = self.device_to_model[str(current_device)]
             population = device_to_population[str(current_device)]
             batches = self.device_to_batches[str(current_device)]
 
             end_individual_idx = current_individual_idx + num_individuals
             individuals = population[:, current_individual_idx:end_individual_idx]
-
-            queue = torch.multiprocessing.Queue()
-            queues.append(queue)
 
             context = {
                 "_layers_offsets_shapes": self._layers_offsets_shapes,
@@ -286,25 +287,17 @@ class BasenDESOptimizer:
                 "criterion": self.criterion,
                 "lr": self.lr
             }
-            process = torch.multiprocessing.Process(target=_evaluate_device,
-                                                    args=(individuals, model, batches, self.batch_idx, queue, context))
 
-            # process = torch.multiprocessing.Process(target=wrapper,
-            #                                         args=(individuals, model, batches, self.batch_idx, queue, context))
-
-            print("sprawning process")
-            process.start()
-            processes.append(process)
+            queue_query, _ = self.queues[i]
+            queue_query.put((individuals, self.batch_idx, context))
 
             current_individual_idx += num_individuals
             self.batch_idx = (self.batch_idx + num_individuals) % len(batches)
 
         print("waiting for queues")
-        for queue in queues:
-            fitnesses.extend(queue.get())
-        print("joining processes")
-        for process in processes:
-            process.join()
+
+        for _, queue_result in self.queues:
+            fitnesses.extend(queue_result.get())
 
         return fitnesses
 
