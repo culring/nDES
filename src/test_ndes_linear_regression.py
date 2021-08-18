@@ -14,7 +14,7 @@ from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
 DEVICE = torch.device("cuda:0")
 DEVICES = [torch.device("cuda:0")]
 #DEVICES = [torch.device("cuda:0"), torch.device("cuda:1")]
-DRAW_CHARTS = False
+DRAW_CHARTS = True
 
 
 class Net(torch.nn.Module):
@@ -71,8 +71,8 @@ def test():
     x_val, y_val = get_test_data()
     kwargs = {
         "criterion": F.mse_loss,
-        # "budget": 100000,
-        "budget": 1000,
+        "budget": 100000,
+        # "budget": 1000,
         "history": 16,
         "nn_train": True,
         "lower": -2,
@@ -97,7 +97,7 @@ def test():
         draw_predictions(model_new, x_val, y_val)
         # draw_predictions(model_old, x_val, y_val)
 
-    # assert abs(old_score - new_score) <= 0.0006, "The difference between the scores is too high."
+    assert abs(old_score - new_score) <= 0.0006, "The difference between the scores is too high."
 
 
 def test_func_wrapper(x_val, y_val):

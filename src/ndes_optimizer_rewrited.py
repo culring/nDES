@@ -25,22 +25,21 @@ def wrapper(*args):
     cProfile.runctx('_evaluate_device(*args)', globals(), locals(), 'process.prof')
 
 
-def worker(model, batches, queue_query, queue_result, job_id):
+def worker(model, queue_query, queue_result, job_id):
     while True:
         print(f"[job_{job_id}] waiting for queue")
-        individuals, start_batch_idx, context = queue_query.get()
+        individuals, batch_iterator, context = queue_query.get()
         print(f"[job_{job_id}] got from queue")
-        fitnesses = _evaluate_device(individuals, model, batches, start_batch_idx, context)
+        fitnesses = _evaluate_device(individuals, model, batch_iterator, context)
         queue_result.put(fitnesses)
 
 
-def _evaluate_device(individuals, model, batches, start_batch_idx, context):
+def _evaluate_device(individuals, model, batch_iterator, context):
     fitnesses = []
 
     for i in range(individuals.shape[1]):
         individual = individuals[:, i]
-        batch_idx = (start_batch_idx + i) % len(batches)
-        batch = (batch_idx, batches[batch_idx])
+        batch = next(batch_iterator)
         fitness = _infer_for_population_algorithm(individual, model, batch, context)
         fitnesses.append(fitness)
 
@@ -181,6 +180,7 @@ class BasenDESOptimizer:
         self.devices = devices
         self.device_to_batches = {}
         self.init_batches(batches)
+        self.batches = batches
         self.batch_idx = 0
         self.batches_size = len(batches)
         self.device_to_model = {}
@@ -192,11 +192,16 @@ class BasenDESOptimizer:
 
     def init_batches(self, batches):
         for device in self.devices:
-            batches_device = []
-            for batch in batches:
-                _, (b_x, y) = batch
-                batches_device.append((b_x.to(device), y.to(device)))
+            batches_device = self.move_batches_to_device(batches, device)
             self.device_to_batches[str(device)] = batches_device
+
+    def move_batches_to_device(self, batches, device):
+        batches_device = []
+        for batch in batches:
+            _, (b_x, y) = batch
+            batches_device.append((b_x.to(device), y.to(device)))
+
+        return batches_device
 
     def init_models(self, model):
         for device in self.devices:
@@ -205,12 +210,11 @@ class BasenDESOptimizer:
     def init_jobs(self):
         for i, device in enumerate(self.devices):
             model = self.device_to_model[str(device)]
-            batches = self.device_to_batches[str(device)]
             queue_query = torch.multiprocessing.Queue()
             queue_result = torch.multiprocessing.Queue()
             self.queues.append((queue_query, queue_result))
             job = torch.multiprocessing.Process(target=worker,
-                                                args=(model, batches, queue_query, queue_result, i))
+                                                args=(model, queue_query, queue_result, i))
             job.start()
             self.jobs.append(job)
         time.sleep(3)
@@ -276,10 +280,12 @@ class BasenDESOptimizer:
 
             current_device = self.devices[i % num_devices]
             population = device_to_population[str(current_device)]
-            batches = self.device_to_batches[str(current_device)]
 
             end_individual_idx = current_individual_idx + num_individuals
             individuals = population[:, current_individual_idx:end_individual_idx]
+
+            batch_loader = self.BatchLoader(self.batch_idx, current_device, 5, self.batches)
+            batch_iterator = iter(batch_loader)
 
             context = {
                 "_layers_offsets_shapes": self._layers_offsets_shapes,
@@ -289,10 +295,10 @@ class BasenDESOptimizer:
             }
 
             queue_query, _ = self.queues[i]
-            queue_query.put((individuals, self.batch_idx, context))
+            queue_query.put((individuals, batch_iterator, context))
 
             current_individual_idx += num_individuals
-            self.batch_idx = (self.batch_idx + num_individuals) % len(batches)
+            self.batch_idx = (self.batch_idx + num_individuals) % len(self.batches)
 
         print("waiting for queues")
 
@@ -300,6 +306,47 @@ class BasenDESOptimizer:
             fitnesses.extend(queue_result.get())
 
         return fitnesses
+
+    class BatchLoader:
+        def __init__(self, start_batch_idx, device, num_batches_on_device, batches):
+            self.start_batch_idx = start_batch_idx
+            self.device = device
+            self.num_batches_on_device = num_batches_on_device
+            self.batches = batches
+
+        def __iter__(self):
+            self.batch_device_idx = -1
+            self.batch_idx = self.start_batch_idx
+            self.batches_device = None
+            return self
+
+        def __next__(self):
+            self.batch_device_idx = (self.batch_device_idx + 1) % self.num_batches_on_device
+            if self.batch_device_idx == 0:
+                del self.batches_device
+                batches_to_move = self._get_n_next_elements_from_array_with_loop(
+                    self.batches, self.batch_idx, self.num_batches_on_device)
+                self.batches_device = self._move_batches_to_device(batches_to_move, self.device)
+                self.batch_idx = (self.batch_idx + self.num_batches_on_device) % len(self.batches)
+            batch_idx = self.batch_idx + self.batch_device_idx
+            return batch_idx, self.batches_device[self.batch_device_idx]
+
+        @staticmethod
+        def _move_batches_to_device(batches, device):
+            batches_device = []
+            for batch in batches:
+                _, (b_x, y) = batch
+                batches_device.append((b_x.to(device), y.to(device)))
+
+            return batches_device
+
+        @staticmethod
+        def _get_n_next_elements_from_array_with_loop(array, start_idx, n):
+            if start_idx + n <= len(array):
+                return array[start_idx:start_idx + n]
+            size_to_end = len(array) - start_idx
+            size_from_beginning = n - size_to_end
+            return array[start_idx:] + array[:size_from_beginning]
 
     def _transfer_population_to_devices(self, population):
         device_to_population = {}
