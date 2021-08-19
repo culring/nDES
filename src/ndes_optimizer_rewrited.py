@@ -31,7 +31,7 @@ def worker(model, queue_query, queue_result, job_id):
         individuals, batch_iterator, context = queue_query.get()
         print(f"[job_{job_id}] got from queue")
         fitnesses = _evaluate_device(individuals, model, batch_iterator, context)
-        queue_result.put(fitnesses)
+        queue_result.put((fitnesses, batch_iterator.batches_idxs_logger))
 
 
 def _evaluate_device(individuals, model, batch_iterator, context):
@@ -67,8 +67,6 @@ def _infer_for_population_algorithm(weights, model, batch, context):
         out = model(b_x)
         loss = context["criterion"](out, y)
     loss = loss.item()
-    # if self.use_fitness_ewma:
-    #     return self.ewma_logger.update_batch(batch_idx, loss)
     return loss
 
 
@@ -87,10 +85,10 @@ def unzip_layers(zipped_layers, context):
 class FitnessEWMALogger:
     """Logger for the fitness values of data batches"""
 
-    def __init__(self, data_gen, model, criterion):
+    def __init__(self, data_gen, model, criterion, num_batches):
         self.ewma_alpha = 1
         self.iter_counter = 1
-        self.num_batches = len(data_gen)
+        self.num_batches = num_batches
         self.ewma = torch.zeros(self.num_batches)
         # FIXME
         # sum of losses per batch for the current iteration
@@ -173,22 +171,26 @@ class BasenDESOptimizer:
         self.xavier_coeffs = self.calculate_xavier_coefficients(model.parameters())
         self.secondary_mutation = kwargs.get("secondary_mutation", None)
         self.lr = lr
-        if use_fitness_ewma:
-            self.ewma_logger = FitnessEWMALogger(data_gen, model, criterion)
-            self.kwargs["iter_callback"] = self.ewma_logger.update_after_iteration
 
         self.devices = devices
         self.device_to_batches = {}
         self.init_batches(batches)
         self.batches = batches
         self.batch_idx = 0
-        self.batches_size = len(batches)
+        self.num_batches = len(batches)
         self.device_to_model = {}
         self.init_models(model)
+
+        if use_fitness_ewma:
+            self.ewma_logger = FitnessEWMALogger(self.data_gen_for_ewma(), model, criterion, self.num_batches)
+            self.kwargs["iter_callback"] = self.ewma_logger.update_after_iteration
 
         self.jobs = []
         self.queues = []
         self.init_jobs()
+
+    def data_gen_for_ewma(self):
+        yield self.get_next_batch()
 
     def init_batches(self, batches):
         for device in self.devices:
@@ -284,7 +286,7 @@ class BasenDESOptimizer:
             end_individual_idx = current_individual_idx + num_individuals
             individuals = population[:, current_individual_idx:end_individual_idx]
 
-            batch_loader = self.BatchLoader(self.batch_idx, current_device, 5, self.batches)
+            batch_loader = self.BatchLoader(self.batch_idx, current_device, 16, self.batches)
             batch_iterator = iter(batch_loader)
 
             context = {
@@ -302,10 +304,21 @@ class BasenDESOptimizer:
 
         print("waiting for queues")
 
-        for _, queue_result in self.queues:
-            fitnesses.extend(queue_result.get())
+        for i, (_, queue_result) in enumerate(self.queues):
+            result, batches_idxs = queue_result.get()
+            if self.use_fitness_ewma:
+                result = self.get_fitness_values_with_ewma(result, batches_idxs)
+            fitnesses.extend(result)
 
         return fitnesses
+
+    def get_fitness_values_with_ewma(self, fitnesses, batches_idxs):
+        fitnesses_updated = []
+        for fitness, batch_idx in zip(fitnesses, batches_idxs):
+            fitness_updated = self.ewma_logger.update_batch(batch_idx, fitness)
+            fitnesses_updated.append(fitness_updated)
+
+        return fitnesses_updated
 
     class BatchLoader:
         def __init__(self, start_batch_idx, device, num_batches_on_device, batches):
@@ -313,6 +326,7 @@ class BasenDESOptimizer:
             self.device = device
             self.num_batches_on_device = num_batches_on_device
             self.batches = batches
+            self.batches_idxs_logger = []
 
         def __iter__(self):
             self.batch_device_idx = -1
@@ -328,7 +342,8 @@ class BasenDESOptimizer:
                     self.batches, self.batch_idx, self.num_batches_on_device)
                 self.batches_device = self._move_batches_to_device(batches_to_move, self.device)
                 self.batch_idx = (self.batch_idx + self.num_batches_on_device) % len(self.batches)
-            batch_idx = self.batch_idx + self.batch_device_idx
+            batch_idx = (self.batch_idx - self.num_batches_on_device + self.batch_device_idx) % len(self.batches)
+            self.batches_idxs_logger.append(batch_idx)
             return batch_idx, self.batches_device[self.batch_device_idx]
 
         @staticmethod
@@ -381,7 +396,7 @@ class BasenDESOptimizer:
 
     def get_next_batch(self, device=torch.device("cuda:0")):
         idx = self.batch_idx
-        self.batch_idx = (self.batch_idx + 1) % self.batches_size
+        self.batch_idx = (self.batch_idx + 1) % self.num_batches
         current_device_to_batches = self.device_to_batches[str(device)]
         return idx, current_device_to_batches[idx]
 
