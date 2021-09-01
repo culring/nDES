@@ -28,7 +28,11 @@ def wrapper(*args):
 def worker(model, queue_query, queue_result, job_id):
     while True:
         print(f"[job_{job_id}] waiting for queue")
-        individuals, batch_iterator, context = queue_query.get()
+        message = queue_query.get()
+        if type(message) == str and message == "STOP":
+            print(f"[job_{job_id}] exiting from process")
+            exit(0)
+        individuals, batch_iterator, context = message
         print(f"[job_{job_id}] got from queue")
         fitnesses = _evaluate_device(individuals, model, batch_iterator, context)
         queue_result.put((fitnesses, batch_iterator.batches_idxs_logger))
@@ -187,7 +191,19 @@ class BasenDESOptimizer:
 
         self.jobs = []
         self.queues = []
-        self.init_jobs()
+
+    def cleanup_jobs(self):
+        print("cleanup method invoked")
+        for queue_query, queue_result in self.queues:
+            queue_query.put("STOP")
+            queue_query.close()
+            queue_result.close()
+        time.sleep(1)
+        for job in self.jobs:
+            job.join()
+
+        self.jobs = []
+        self.queues = []
 
     def data_gen_for_ewma(self):
         yield self.get_next_batch()
@@ -407,6 +423,7 @@ class BasenDESOptimizer:
         Returns:
             Optimized model.
         """
+        self.init_jobs()
         self.test_func = test_func
         best_value = self.initial_value
         with torch.no_grad():
@@ -455,6 +472,7 @@ class BasenDESOptimizer:
                 fitnesses_iterations.append(fitnesses)
             base_cuda_device = self.device_to_model[str(torch.device("cuda:0"))]
             self._reweight_model(base_cuda_device, best_value)
+            self.cleanup_jobs()
             return self.model, fitnesses_iterations
 
     # @profile
