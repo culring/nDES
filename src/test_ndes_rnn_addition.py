@@ -21,8 +21,8 @@ SEQUENCE_LENGTH = 20
 
 def cycle(batches):
     while True:
-        for batch in batches:
-            yield batch
+        for x in enumerate(batches):
+            yield x
 
 
 def generate_dataset(num_batches, num_samples=5000):
@@ -118,7 +118,8 @@ def test_rnn_addition_single_batch_generic():
         "tol": 1e-6,
         "worst_fitness": 3,
         "device": DEVICE,
-        "log_dir": f"rnn_addition_{SEQUENCE_LENGTH}"
+        "log_dir": f"rnn_addition_{SEQUENCE_LENGTH}",
+        "num_batches_on_device": 1,
     }
 
     batches, data_gen = generate_dataset(1)

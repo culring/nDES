@@ -99,6 +99,7 @@ def test():
         "device": DEVICE,
         "x_val": x_val,
         "y_val": y_val,
+        "num_batches_on_device": 16,
 
         # "use_fitness_ewma": True
     }

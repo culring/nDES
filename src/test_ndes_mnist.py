@@ -50,8 +50,8 @@ def _seed_everything():
 
 def cycle(batches):
     while True:
-        for batch in batches:
-            yield batch
+        for x in enumerate(batches):
+            yield x
 
 
 class MyDataset(data.Dataset):
@@ -208,7 +208,8 @@ def test():
         "device": DEVICE,
         "lambda_": 4000,
         "x_val": x_val,
-        "y_val": y_val
+        "y_val": y_val,
+        "num_batches_on_device": 4,
     }
 
     train_batches, train_data_gen = get_train_batches()
