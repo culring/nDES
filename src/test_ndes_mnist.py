@@ -11,6 +11,7 @@ from timeit import default_timer as timer
 
 from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
 from ndes_optimizer_rewrited import BasenDESOptimizer as BasenDESOptimizerNew
+from test_utils import Cycler
 
 
 DEVICE = torch.device("cuda:0")
@@ -46,12 +47,6 @@ def _seed_everything():
     torch.manual_seed(0)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
-
-def cycle(batches):
-    while True:
-        for x in enumerate(batches):
-            yield x
 
 
 class MyDataset(data.Dataset):
@@ -128,7 +123,7 @@ def get_train_batches():
     # data_loader = data.DataLoader(my_dataset, len(samples[1]))
     data_loader = data.DataLoader(my_dataset, 1024)
     batches = [(idx, x) for idx, x in enumerate(data_loader)]
-    data_gen = cycle(batches)
+    data_gen = Cycler(batches)
 
     return batches, data_gen
 
@@ -210,6 +205,7 @@ def test():
         "x_val": x_val,
         "y_val": y_val,
         "num_batches_on_device": 4,
+        "use_fitness_ewma": True
     }
 
     train_batches, train_data_gen = get_train_batches()
@@ -217,11 +213,13 @@ def test():
     # model_old = test_old(train_data_gen, kwargs, test_func)
     model_new = test_new(train_batches, kwargs, test_func)
 
-    accuracy_old = 95.8
+    accuracy_old = 95.89999999999999
     # accuracy_old = check_accuracy(model_old, x_val, y_val)
     accuracy_new = check_accuracy(model_new, x_val, y_val)
 
-    assert abs(accuracy_old - accuracy_new) < 0.5, "Models don't match"
+    print(accuracy_new)
+
+    assert abs(accuracy_old - accuracy_new) < 0.9, "Models don't match"
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from timeit import default_timer as timer
 
 from ndes_optimizer_rewrited import BasenDESOptimizer as BasenDESOptimizerNew
 from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
+from test_utils import Cycler
 
 
 DEVICE = torch.device("cuda:0")
@@ -49,23 +50,6 @@ def get_test_data():
     y = x.pow(2) + 0.2 * torch.rand(x.size()).to(DEVICE)
 
     return x, y
-
-
-class Cycler:
-    def __init__(self, batches):
-        self.batch_idx = 0
-        self.batches = batches
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        batch_idx = self.batch_idx
-        self.batch_idx = (self.batch_idx + 1) % len(self.batches)
-        return self.batches[batch_idx]
-
-    def __len__(self):
-        return len(self.batches)
 
 
 def cycle(batches):
