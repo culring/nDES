@@ -2,7 +2,7 @@ import abc
 from enum import Enum
 
 
-class FitnesssProcessingType(Enum):
+class FitnessProcessingType(Enum):
     IDENTITY = 1,
     EWMA = 2
 

@@ -18,7 +18,7 @@ from ndes.population_initializers import (
     XavierMVNPopulationInitializer,
 )
 from ndes.utils import seconds_to_human_readable
-from ndes.fitness_processing.fitness_processing import FitnesssProcessingType
+from ndes.fitness_processing.fitness_processing import FitnessProcessingType
 from ndes.node.gpu_node.gpu_node_config import GPUNode as GPUNodeType
 
 
@@ -36,7 +36,7 @@ class NDESOptimizer:
             lr=1e-3,
             batches=None,
             nodes=None,
-            fitness_processing_type=FitnesssProcessingType.IDENTITY,
+            fitness_processing_type=FitnessProcessingType.IDENTITY,
             **kwargs,
     ):
         """
@@ -94,12 +94,12 @@ class NDESOptimizer:
             node.cleanup()
 
     def setup_fitness_processing(self, fitness_processing_type):
-        if fitness_processing_type == FitnesssProcessingType.EWMA:
+        if fitness_processing_type == FitnessProcessingType.EWMA:
             self.fitness_processing = EWMAFitnessProcessing(self.data_gen,
                                                             self.model,
                                                             self.criterion,
                                                             len(self.batches))
-        elif fitness_processing_type == FitnesssProcessingType.IDENTITY:
+        elif fitness_processing_type == FitnessProcessingType.IDENTITY:
             self.fitness_processing = IdentityFitnessProcessing()
         self.kwargs["iter_callback"] = self.fitness_processing.update_after_iteration
 
