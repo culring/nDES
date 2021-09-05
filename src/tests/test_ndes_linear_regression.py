@@ -11,8 +11,8 @@ from timeit import default_timer as timer
 from ndes import NDESOptimizer as NDESOptimizerNew
 import ndes
 from ndes.fitness_processing.fitness_ewma_logger import EWMAFitnessProcessing
-from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
-from test_utils import Cycler
+from ndes_optimizer import BasenDESOptimizer as BasenDESOptimizerOld
+from tests.utils import Cycler
 
 
 DEVICE = torch.device("cuda:0")

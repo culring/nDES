@@ -12,7 +12,7 @@ import sys
 from timeit import default_timer as timer
 
 from ndes import RNNnDESOptimizer as RNNnDESOptimizerNew
-from ndes_optimizer_original import RNNnDESOptimizer as RNNnDESOptimizerOld
+from ndes_optimizer import RNNnDESOptimizer as RNNnDESOptimizerOld
 from utils_rnn import DummyDataGenerator
 import ndes
 

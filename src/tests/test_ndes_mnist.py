@@ -10,10 +10,10 @@ import random
 import sys
 from timeit import default_timer as timer
 
-from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
+from ndes_optimizer import BasenDESOptimizer as BasenDESOptimizerOld
 from ndes.ndes_optimizer import NDESOptimizer as NDESOptimizerNew
 import ndes
-from test_utils import Cycler
+from tests.utils import Cycler
 
 
 DEVICE = torch.device("cuda:0")
