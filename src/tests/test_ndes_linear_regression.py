@@ -5,10 +5,11 @@ import torch
 import torch.nn.functional as F
 import torch.utils.data as Data
 
+import sys
 from timeit import default_timer as timer
 
-from ndes_optimizer_rewrited import BasenDESOptimizer as BasenDESOptimizerNew
-from ndes.ndes_optimizer import NDESOptimizer as NDESOptimizerNew
+from ndes import NDESOptimizer as NDESOptimizerNew
+import ndes
 from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
 from test_utils import Cycler
 
@@ -138,7 +139,7 @@ def test_new(batches, data_gen, kwargs, test_func=None):
         model=net,
         data_gen=data_gen,
         batches=batches,
-        devices=DEVICES,
+        nodes=NODES,
         **kwargs
     )
 
@@ -185,6 +186,12 @@ def plot_fitnesses(fitnesses_iterations):
 
 
 if __name__ == "__main__":
+    machine = sys.argv[1]
+    if machine == "pc":
+        NODES = [ndes.GPUNode(torch.device(0))]
+    elif machine == "server":
+        NODES = [ndes.GPUNode(torch.device(0)), ndes.GPUNode(torch.device(1))]
+
     # import cProfile
     # cProfile.run("test()", "profile_old.txt")
 

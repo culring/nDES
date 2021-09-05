@@ -17,6 +17,7 @@ from ndes.population_initializers import (
     XavierMVNPopulationInitializer,
 )
 from ndes.utils import seconds_to_human_readable
+import ndes
 
 
 class NDESOptimizer:
@@ -32,7 +33,7 @@ class NDESOptimizer:
             restarts=None,
             lr=1e-3,
             batches=None,
-            devices=None,
+            nodes=None,
             **kwargs,
     ):
         """
@@ -70,12 +71,12 @@ class NDESOptimizer:
         self.batch_idx = 0
         self.num_batches = len(batches)
         self.num_batches_on_device = kwargs["num_batches_on_device"]
-        self.nodes = []
         self.forward_backward_pass = ForwardBackwardPass(self.secondary_mutation,
                                                          self.criterion,
                                                          self.lr,
                                                          self.tensor_model_converter)
-        self.initialize_nodes()
+        self.nodes = []
+        self.initialize_nodes(nodes)
 
         self.distribution_strategy = CompleteLoadingStrategy(self.nodes, self.data_gen, self.batches)
 
@@ -83,9 +84,13 @@ class NDESOptimizer:
             self.ewma_logger = FitnessEWMALogger(data_gen, model, criterion, self.num_batches)
             self.kwargs["iter_callback"] = self.ewma_logger.update_after_iteration
 
-    def initialize_nodes(self):
-        node = GPUNode(torch.device("cuda:0"), self.model, self.forward_backward_pass)
-        self.nodes.append(node)
+    def initialize_nodes(self, nodes_configs):
+        for config in nodes_configs:
+            if type(config) == ndes.GPUNode:
+                node = GPUNode(config.device, self.model, self.forward_backward_pass)
+                self.nodes.append(node)
+            else:
+                raise TypeError("Unknown node type")
 
     def cleanup_nodes(self):
         for node in self.nodes:

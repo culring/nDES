@@ -7,16 +7,19 @@ import torch.utils.data as data
 from torchvision import datasets, transforms
 
 import random
+import sys
 from timeit import default_timer as timer
 
 from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
 from ndes.ndes_optimizer import NDESOptimizer as NDESOptimizerNew
+import ndes
 from test_utils import Cycler
 
 
 DEVICE = torch.device("cuda:0")
 DEVICES = [torch.device("cuda:0")]
 DRAW_CHARTS = False
+NODES = None
 
 
 class Net(nn.Module):
@@ -160,7 +163,7 @@ def test_new(batches, data_gen, kwargs, test_func=None):
         model=model,
         data_gen=data_gen,
         batches=batches,
-        devices=DEVICES,
+        nodes=NODES,
         **kwargs
     )
 
@@ -223,6 +226,12 @@ def test():
 
 
 if __name__ == "__main__":
+    machine = sys.argv[1]
+    if machine == "pc":
+        NODES = [ndes.GPUNode(torch.device(0))]
+    elif machine == "server":
+        NODES = [ndes.GPUNode(torch.device(0)), ndes.GPUNode(torch.device(1))]
+
     torch.multiprocessing.set_start_method('spawn')
     begin = timer()
     test()
