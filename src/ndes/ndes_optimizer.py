@@ -7,7 +7,8 @@ import numpy as np
 import torch
 
 from ndes.distribution_strategy.complete_loading_strategy import CompleteLoadingStrategy
-from ndes.fitness_ewma_logger import FitnessEWMALogger
+from ndes.fitness_processing.fitness_ewma_logger import EWMAFitnessProcessing
+from ndes.fitness_processing.identity_fitness_processing import IdentityFitnessProcessing
 from ndes.forward_backward_pass import ForwardBackwardPass
 from ndes.node.gpu_node.gpu_node import GPUNode
 from ndes.tensor_model_converter import TensorModelConverter
@@ -17,7 +18,8 @@ from ndes.population_initializers import (
     XavierMVNPopulationInitializer,
 )
 from ndes.utils import seconds_to_human_readable
-import ndes
+from ndes.fitness_processing.fitness_processing import FitnesssProcessingType
+from ndes.node.gpu_node.gpu_node_config import GPUNode as GPUNodeType
 
 
 class NDESOptimizer:
@@ -34,6 +36,7 @@ class NDESOptimizer:
             lr=1e-3,
             batches=None,
             nodes=None,
+            fitness_processing_type=FitnesssProcessingType.IDENTITY,
             **kwargs,
     ):
         """
@@ -68,25 +71,19 @@ class NDESOptimizer:
         self.lr = lr
 
         self.batches = batches
-        self.batch_idx = 0
-        self.num_batches = len(batches)
-        self.num_batches_on_device = kwargs["num_batches_on_device"]
         self.forward_backward_pass = ForwardBackwardPass(self.secondary_mutation,
                                                          self.criterion,
                                                          self.lr,
                                                          self.tensor_model_converter)
         self.nodes = []
         self.initialize_nodes(nodes)
-
         self.distribution_strategy = CompleteLoadingStrategy(self.nodes, self.data_gen, self.batches)
-
-        if use_fitness_ewma:
-            self.ewma_logger = FitnessEWMALogger(data_gen, model, criterion, self.num_batches)
-            self.kwargs["iter_callback"] = self.ewma_logger.update_after_iteration
+        self.fitness_processing = None
+        self.setup_fitness_processing(fitness_processing_type)
 
     def initialize_nodes(self, nodes_configs):
         for config in nodes_configs:
-            if type(config) == ndes.GPUNode:
+            if type(config) == GPUNodeType:
                 node = GPUNode(config.device, self.model, self.forward_backward_pass)
                 self.nodes.append(node)
             else:
@@ -95,6 +92,16 @@ class NDESOptimizer:
     def cleanup_nodes(self):
         for node in self.nodes:
             node.cleanup()
+
+    def setup_fitness_processing(self, fitness_processing_type):
+        if fitness_processing_type == FitnesssProcessingType.EWMA:
+            self.fitness_processing = EWMAFitnessProcessing(self.data_gen,
+                                                            self.model,
+                                                            self.criterion,
+                                                            len(self.batches))
+        elif fitness_processing_type == FitnesssProcessingType.IDENTITY:
+            self.fitness_processing = IdentityFitnessProcessing()
+        self.kwargs["iter_callback"] = self.fitness_processing.update_after_iteration
 
     @staticmethod
     def calculate_xavier_coefficients(layers_iter):
@@ -113,9 +120,8 @@ class NDESOptimizer:
     def _objective_function_population(self, population):
         fitness_values, batch_indices = self.distribution_strategy.evaluate(population)
 
-        if self.use_fitness_ewma:
-            for i, batch_idx in enumerate(batch_indices):
-                fitness_values[i] = self.ewma_logger.update_batch(batch_idx, fitness_values[i])
+        for i, batch_idx in enumerate(batch_indices):
+            fitness_values[i] = self.fitness_processing.update_batch(batch_idx, fitness_values[i])
 
         return fitness_values
 
@@ -140,13 +146,8 @@ class NDESOptimizer:
             loss = self.criterion(out, y)
         loss = loss.item()
         if self.use_fitness_ewma:
-            return self.ewma_logger.update_batch(batch_idx, loss)
+            return self.fitness_processing.update_batch(batch_idx, loss)
         return loss
-
-    def get_next_batch(self):
-        idx = self.batch_idx
-        self.batch_idx = (self.batch_idx + 1) % self.num_batches
-        return self.batches[idx]
 
     # @profile
     def run(self, test_func=None):

@@ -10,13 +10,12 @@ from timeit import default_timer as timer
 
 from ndes import NDESOptimizer as NDESOptimizerNew
 import ndes
+from ndes.fitness_processing.fitness_ewma_logger import EWMAFitnessProcessing
 from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
 from test_utils import Cycler
 
 
 DEVICE = torch.device("cuda:0")
-DEVICES = [torch.device("cuda:0")]
-#DEVICES = [torch.device("cuda:0"), torch.device("cuda:1")]
 DRAW_CHARTS = False
 
 
@@ -140,6 +139,7 @@ def test_new(batches, data_gen, kwargs, test_func=None):
         data_gen=data_gen,
         batches=batches,
         nodes=NODES,
+        fitness_processing=EWMAFitnessProcessing,
         **kwargs
     )
 

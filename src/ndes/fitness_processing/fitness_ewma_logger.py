@@ -1,7 +1,9 @@
 import torch
 
+from ndes.fitness_processing.fitness_processing import FitnessProcessing
 
-class FitnessEWMALogger:
+
+class EWMAFitnessProcessing(FitnessProcessing):
     """Logger for the fitness values of data batches"""
 
     def __init__(self, data_gen, model, criterion, num_batches):
