@@ -41,9 +41,9 @@ class GPUNodeClient:
 
     def evaluate(self, command):
         fitness_individuals = []
-        for i, batch_idx in enumerate(command.batch_order):
+        for i, batch_order_idx in enumerate(command.batch_order):
             individual = self.individuals[:, i]
-            batch = self.batches[batch_idx]
+            batch = self.batches[batch_order_idx]
             fitness = self.forward_backward_pass.run(individual, self.model, batch)
             fitness_individuals.append(fitness)
         self.queue_result.put(fitness_individuals)

@@ -21,7 +21,7 @@ class CompleteLoadingStrategy(DistributionStrategy):
         remaining_individuals = population_size - num_individuals_per_node * num_nodes
         current_individual_idx = 0
 
-        total_batch_order = []
+        total_batch_indices = []
 
         for i in range(num_nodes):
             num_individuals = num_individuals_per_node
@@ -33,10 +33,12 @@ class CompleteLoadingStrategy(DistributionStrategy):
 
             end_individual_idx = current_individual_idx + num_individuals
             individuals = population[:, current_individual_idx:end_individual_idx]
+            current_individual_idx = end_individual_idx
             current_node.load_individuals(individuals)
 
-            batch_indices = self._get_current_batch_indices(population_size)
-            total_batch_order.extend(batch_indices)
+            batch_indices = self._get_next_batches_indices(num_individuals)
+            total_batch_indices.extend(batch_indices)
+
             batch_order = batch_indices
             current_node.evaluate(batch_order)
 
@@ -44,12 +46,7 @@ class CompleteLoadingStrategy(DistributionStrategy):
             result = self.nodes[i].get_fitness()
             fitness_values.extend(result)
 
-        return fitness_values, total_batch_order
+        return fitness_values, total_batch_indices
 
-    def _get_current_batch_indices(self, population_size):
-        batch_indices = []
-        for i in range(population_size):
-            idx, _ = next(self.data_gen)
-            batch_indices.append(idx)
-
-        return batch_indices
+    def _get_next_batches_indices(self, num_batches):
+        return [next(self.data_gen)[0] for _ in range(num_batches)]
