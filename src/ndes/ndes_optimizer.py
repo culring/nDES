@@ -7,6 +7,7 @@ import numpy as np
 import torch
 
 from ndes.distribution_strategy.complete_loading_strategy import CompleteLoadingStrategy
+from ndes.distribution_strategy.iterative_loading_strategy import IterativeLoadingStrategy
 from ndes.fitness_processing.fitness_ewma_logger import EWMAFitnessProcessing
 from ndes.fitness_processing.identity_fitness_processing import IdentityFitnessProcessing
 from ndes.forward_backward_pass import ForwardBackwardPass
@@ -37,6 +38,7 @@ class NDESOptimizer:
             batches=None,
             nodes=None,
             fitness_processing_type=FitnessProcessingType.IDENTITY,
+            distribution_strategy=CompleteLoadingStrategy,
             **kwargs,
     ):
         """
@@ -77,6 +79,8 @@ class NDESOptimizer:
                                                          self.tensor_model_converter)
         self.nodes = []
         self.initialize_nodes(nodes)
+        self.distribution_strategy = None
+        self.setup_distribution_strategy(distribution_strategy)
         self.distribution_strategy = CompleteLoadingStrategy(self.nodes, self.data_gen, self.batches)
         self.fitness_processing = None
         self.setup_fitness_processing(fitness_processing_type)
@@ -88,6 +92,12 @@ class NDESOptimizer:
                 self.nodes.append(node)
             else:
                 raise TypeError("Unknown node type")
+
+    def setup_distribution_strategy(self, distribution_strategy_cls):
+        if distribution_strategy_cls == CompleteLoadingStrategy:
+            self.distribution_strategy = CompleteLoadingStrategy(self.nodes, self.data_gen, self.batches)
+        elif distribution_strategy_cls == IterativeLoadingStrategy:
+            self.distribution_strategy = IterativeLoadingStrategy(self.nodes, self.data_gen)
 
     def cleanup_nodes(self):
         for node in self.nodes:

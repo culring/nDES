@@ -117,13 +117,13 @@ def test_func_wrapper(x_val, y_val):
 def test_old(data_gen, kwargs, test_func=None):
     net = get_model()
 
-    ndes = BasenDESOptimizerOld(
+    ndes_optimizer = BasenDESOptimizerOld(
         model=net,
         data_gen=data_gen,
         **kwargs
     )
 
-    best, fitnesses_iterations = ndes.run(test_func)
+    best, fitnesses_iterations = ndes_optimizer.run(test_func)
 
     if DRAW_CHARTS:
         plot_fitnesses(fitnesses_iterations)
@@ -134,16 +134,17 @@ def test_old(data_gen, kwargs, test_func=None):
 def test_new(batches, data_gen, kwargs, test_func=None):
     net = get_model()
 
-    ndes = NDESOptimizerNew(
+    ndes_optimizer = NDESOptimizerNew(
         model=net,
         data_gen=data_gen,
         batches=batches,
         nodes=NODES,
         fitness_processing=EWMAFitnessProcessing,
+        distribution_strategy=ndes.IterativeLoadingStrategy,
         **kwargs
     )
 
-    best, fitnesses_iterations = ndes.run(test_func)
+    best, fitnesses_iterations = ndes_optimizer.run(test_func)
 
     if DRAW_CHARTS:
         plot_fitnesses(fitnesses_iterations)
