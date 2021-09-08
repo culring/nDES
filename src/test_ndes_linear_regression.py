@@ -5,17 +5,16 @@ import torch
 import torch.nn.functional as F
 import torch.utils.data as Data
 
-import sys
 from timeit import default_timer as timer
 
-from ndes import NDESOptimizer as NDESOptimizerNew
-import ndes
-from ndes.fitness_processing.fitness_ewma_logger import EWMAFitnessProcessing
+from ndes_optimizer_rewrited import BasenDESOptimizer as BasenDESOptimizerNew
 from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
 from test_utils import Cycler
 
 
 DEVICE = torch.device("cuda:0")
+DEVICES = [torch.device("cuda:0")]
+#DEVICES = [torch.device("cuda:0"), torch.device("cuda:1")]
 DRAW_CHARTS = False
 
 
@@ -91,7 +90,7 @@ def test():
     test_func = test_func_wrapper(x_val, y_val)
 
     # model_old = test_old(train_data_gen, kwargs, test_func)
-    model_new = test_new(train_batches, train_data_gen, kwargs, test_func)
+    model_new = test_new(train_batches, kwargs, test_func)
 
     old_score = 0.0048
     new_score = eval(model_new, x_val, y_val)
@@ -131,15 +130,14 @@ def test_old(data_gen, kwargs, test_func=None):
     return best
 
 
-def test_new(batches, data_gen, kwargs, test_func=None):
+def test_new(batches, kwargs, test_func=None):
     net = get_model()
 
-    ndes = NDESOptimizerNew(
+    ndes = BasenDESOptimizerNew(
         model=net,
-        data_gen=data_gen,
+        data_gen=None,
         batches=batches,
-        nodes=NODES,
-        fitness_processing=EWMAFitnessProcessing,
+        devices=DEVICES,
         **kwargs
     )
 
@@ -186,12 +184,6 @@ def plot_fitnesses(fitnesses_iterations):
 
 
 if __name__ == "__main__":
-    machine = sys.argv[1]
-    if machine == "pc":
-        NODES = [ndes.GPUNode(torch.device(0))]
-    elif machine == "server":
-        NODES = [ndes.GPUNode(torch.device(0)), ndes.GPUNode(torch.device(1))]
-
     # import cProfile
     # cProfile.run("test()", "profile_old.txt")
 

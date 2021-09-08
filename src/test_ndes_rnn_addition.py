@@ -1,87 +1,28 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import random
-import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-from torch import nn
-from torch.nn.utils.rnn import pad_packed_sequence
 
-from random import randint
-import sys
 from timeit import default_timer as timer
 
-from ndes import RNNnDESOptimizer as RNNnDESOptimizerNew
+from ndes_optimizer_rewrited import RNNnDESOptimizer as RNNnDESOptimizerNew
 from ndes_optimizer_original import RNNnDESOptimizer as RNNnDESOptimizerOld
 from utils_rnn import DummyDataGenerator
-import ndes
+from rnn_addition_experiment import dataset_generator
+from rnn_addition_experiment import Net
 
 
 DEVICE = torch.device("cuda:0")
 DEVICES = [torch.device("cuda:0")]
+#DEVICES = [torch.device("cuda:0"), torch.device("cuda:1")]
 SEQUENCE_LENGTH = 20
 
 
 def cycle(batches):
     while True:
-        for x in batches:
+        for x in enumerate(batches):
             yield x
-
-
-def dataset_generator(num_samples, min_sample_length, seed=0, device=DEVICE):
-    dataset = []
-    gts = []
-    max_sample_length = min_sample_length + int(min_sample_length / 10)
-    sizes = (
-        np.random.default_rng(seed)
-        .uniform(min_sample_length, max_sample_length, num_samples)
-        .astype(int)
-    )
-    for size in sizes:
-        values = np.random.default_rng(seed).uniform(-1, 1, size)
-        x1_index = randint(0, min(10, size - 1))
-        x2_index = x1_index
-        while x2_index == x1_index:
-            x2_index = randint(0, int(min_sample_length / 2) - 1)
-
-        mask = np.zeros_like(values)
-        mask[x1_index] = 1
-        mask[x2_index] = 1
-        mask[0] = -1
-        mask[-1] = -1
-
-        x1 = values[x1_index] if x1_index != 0 else 0
-        x2 = values[x2_index] if x2_index != 0 else 0
-        gt = 0.5 + ((x1 + x2) / 4)
-        dataset.append(torch.tensor((values, mask)).permute(1, 0).float().to(device))
-        gts.append(gt)
-    return dataset, sizes.tolist(), torch.tensor(gts).float().to(device)
-
-
-class Net(pl.LightningModule):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.rnn = nn.RNN(2, 4, batch_first=True)
-        self.output = nn.Linear(4, 1)
-
-    def forward(self, x, hidden=None):
-        out, _ = self.rnn(x, hidden)
-        seq_unpacked, lens_unpacked = pad_packed_sequence(out, batch_first=True)
-        lens_unpacked -= 1
-        lens = lens_unpacked.unsqueeze(-1)
-        indices = lens.repeat(1, 4)
-        self.indices = indices.unsqueeze(1).to(x.data.device)
-        out = torch.gather(seq_unpacked, 1, self.indices)
-        return self.output(out).flatten()
-
-    def training_step(self, batch, batch_nb):
-        x, y = batch
-        loss = F.mse_loss(self(x), y)
-        # tensorboard_logs = {'train_loss': loss}
-        return {"loss": loss}
-
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=0.01)
 
 
 def generate_dataset(num_batches, num_samples=5000):
@@ -145,14 +86,14 @@ def test_rnn_addition_old(data_gen, kwargs, test_func=None):
     return best
 
 
-def test_rnn_addition_new(batches, data_gen, kwargs, test_func=None):
+def test_rnn_addition_new(batches, kwargs, test_func=None):
     net = Net().to(DEVICE)
 
     ndes = RNNnDESOptimizerNew(
         model=net,
-        data_gen=data_gen,
+        data_gen=None,
         batches=batches,
-        nodes=NODES,
+        devices=DEVICES,
         **kwargs
     )
 
@@ -184,7 +125,7 @@ def test_rnn_addition_single_batch_generic():
     batches, data_gen = generate_dataset(1)
 
     # model_old = test_rnn_addition_single_batch_old(data_gen)
-    model_new = test_rnn_addition_new(batches, data_gen, kwargs)
+    model_new = test_rnn_addition_new(batches, kwargs)
 
     test_batches, _ = generate_dataset(1, 1000)
     accuracy_old = 0.0082
@@ -235,12 +176,6 @@ def test_rnn_addition_two_batches_generic():
 
 
 if __name__ == "__main__":
-    machine = sys.argv[1]
-    if machine == "pc":
-        NODES = [ndes.GPUNode(torch.device(0))]
-    elif machine == "server":
-        NODES = [ndes.GPUNode(torch.device(0)), ndes.GPUNode(torch.device(1))]
-
     torch.multiprocessing.set_start_method('spawn')
     begin = timer()
     test_rnn_addition_single_batch_generic()

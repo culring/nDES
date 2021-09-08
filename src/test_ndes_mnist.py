@@ -7,19 +7,16 @@ import torch.utils.data as data
 from torchvision import datasets, transforms
 
 import random
-import sys
 from timeit import default_timer as timer
 
 from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
-from ndes.ndes_optimizer import NDESOptimizer as NDESOptimizerNew
-import ndes
+from ndes_optimizer_rewrited import BasenDESOptimizer as BasenDESOptimizerNew
 from test_utils import Cycler
 
 
 DEVICE = torch.device("cuda:0")
 DEVICES = [torch.device("cuda:0")]
 DRAW_CHARTS = False
-NODES = None
 
 
 class Net(nn.Module):
@@ -156,14 +153,14 @@ def test_old(data_gen, kwargs, test_func=None):
     return best
 
 
-def test_new(batches, data_gen, kwargs, test_func=None):
+def test_new(batches, kwargs, test_func=None):
     model = Net().to(DEVICE)
 
-    des_optim = NDESOptimizerNew(
+    des_optim = BasenDESOptimizerNew(
         model=model,
-        data_gen=data_gen,
+        data_gen=None,
         batches=batches,
-        nodes=NODES,
+        devices=DEVICES,
         **kwargs
     )
 
@@ -214,7 +211,7 @@ def test():
     train_batches, train_data_gen = get_train_batches()
     test_func = test_func_wrapper(x_val, y_val)
     # model_old = test_old(train_data_gen, kwargs, test_func)
-    model_new = test_new(train_batches, train_data_gen, kwargs, test_func)
+    model_new = test_new(train_batches, kwargs, test_func)
 
     accuracy_old = 95.89999999999999
     # accuracy_old = check_accuracy(model_old, x_val, y_val)
@@ -226,12 +223,6 @@ def test():
 
 
 if __name__ == "__main__":
-    machine = sys.argv[1]
-    if machine == "pc":
-        NODES = [ndes.GPUNode(torch.device(0))]
-    elif machine == "server":
-        NODES = [ndes.GPUNode(torch.device(0)), ndes.GPUNode(torch.device(1))]
-
     torch.multiprocessing.set_start_method('spawn')
     begin = timer()
     test()
