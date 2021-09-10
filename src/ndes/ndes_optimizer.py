@@ -81,7 +81,6 @@ class NDESOptimizer:
         self.initialize_nodes(nodes)
         self.distribution_strategy = None
         self.setup_distribution_strategy(distribution_strategy)
-        self.distribution_strategy = CompleteLoadingStrategy(self.nodes, self.data_gen, self.batches)
         self.fitness_processing = None
         self.setup_fitness_processing(fitness_processing_type)
 
