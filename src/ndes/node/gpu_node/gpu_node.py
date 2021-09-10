@@ -33,11 +33,13 @@ class GPUNode(Node):
 
     def load_individuals(self, individuals):
         command = LoadIndividualsCommand(individuals.to(self.device))
+        self.logger.log("sending LOAD_INDIVIDUALS command")
         self.queue_query.put(command)
 
     def load_batches(self, batches):
         batches_device = self._copy_batches_to_device(batches)
         command = LoadBatchesCommand(batches_device)
+        self.logger.log("sending LOAD_BATCHES command")
         self.queue_query.put(command)
 
     def _copy_batches_to_device(self, batches):
@@ -51,9 +53,11 @@ class GPUNode(Node):
 
     def evaluate(self, batch_order):
         command = EvaluateCommand(batch_order)
+        self.logger.log("sending EVALUATE command")
         self.queue_query.put(command)
 
     def get_fitness(self):
+        self.logger.log("fetching results")
         return self.queue_result.get()
 
     def get_capacity(self):
