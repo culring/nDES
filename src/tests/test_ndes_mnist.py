@@ -204,7 +204,7 @@ def test():
         "tol": 1e-6,
         "worst_fitness": 3,
         "device": DEVICE,
-        "lambda_": 4000,
+        "lambda_": 500,
         "x_val": x_val,
         "y_val": y_val,
         "num_batches_on_device": 4,
@@ -216,13 +216,13 @@ def test():
     # model_old = test_old(train_data_gen, kwargs, test_func)
     model_new = test_new(train_batches, train_data_gen, kwargs, test_func)
 
-    accuracy_old = 95.89999999999999
+    accuracy_old = 98.75
     # accuracy_old = check_accuracy(model_old, x_val, y_val)
     accuracy_new = check_accuracy(model_new, x_val, y_val)
 
-    print(accuracy_new)
+    print(f"accuracy_old = {accuracy_old}, accuracy_new = {accuracy_new}")
 
-    assert abs(accuracy_old - accuracy_new) < 0.9, "Models don't match"
+    assert abs(accuracy_old - accuracy_new) < 0.5, "Models don't match"
 
 
 if __name__ == "__main__":
