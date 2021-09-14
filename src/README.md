@@ -7,9 +7,13 @@
 * `nvcc` in your $PATH
 
 ### Python libraries
-Install them via [`poetry`](https://python-poetry.org/):
+Create a new [`conda`](https://conda.io/) environment and install libraries from environment.yml:
 ```shell
-poetry install
+conda env create -f environment.yml
+``` 
+Activate the environment and install additional packages:
+```shell
+conda install pytorch torchvision torchaudio cudatoolkit=10.2 -c pytorch
 ```
 
 ### Install CUDA-based extensions
