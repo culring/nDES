@@ -15,6 +15,10 @@ Activate the environment and install additional packages:
 ```shell
 conda install pytorch torchvision torchaudio cudatoolkit=10.2 -c pytorch
 ```
+Add the nDES package to the PYTHONPATH environment variable:
+```shell
+export PYTHONPATH=${PYTHONPATH}:{sciezka_do_ndes}
+```
 
 ### Install CUDA-based extensions
 ```shell
