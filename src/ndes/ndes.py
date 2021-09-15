@@ -103,7 +103,9 @@ class NDES:
 
         self.fn_population = kwargs.get("fn_population")
 
-        self.fitnesses = []
+        self.fitness_values = []
+        self.test_accuracy_values = []
+        self.test_loss_values = []
 
     # @profile
     def _fitness_wrapper(self, x):
@@ -214,6 +216,10 @@ class NDES:
         self.best_solution = None
         # The worst solution found so far
         self.worst_fit = None
+        # losses for best individual in each iteration
+        self.fitness_values = []
+        self.test_accuracy_values = []
+        self.test_loss_values = []
 
         d_mean = torch.zeros(
             (self.problem_size, self.hist_size), device=self.cpu, dtype=self.dtype
@@ -394,11 +400,10 @@ class NDES:
                 print(f"fn_cum: {fn_cum}")
                 iter_log["fn_cum"] = fn_cum
 
-                if self.test_func is None:
-                    if fitness[wb].item() < fn_cum:
-                        self.fitnesses.append(fitness[wb].item())
-                    else:
-                        self.fitnesses.append(fn_cum)
+                if fitness[wb].item() < fn_cum:
+                    self.fitness_values.append(fitness[wb].item())
+                else:
+                    self.fitness_values.append(fn_cum)
 
                 if self.test_func is None and fn_cum < self.best_fitness:
                     self.best_fitness = fn_cum
@@ -415,16 +420,14 @@ class NDES:
                 print(f"iter={self.iter_}")
                 iter_log["best_found"] = self.best_fitness
                 if self.iter_ % 10 == 0 and self.test_func is not None:
-                    # (test_loss, test_acc), self.best_solution = self.test_func(
-                    #     population
-                    # )
-                    test_acc, best_solution = self.test_func(
+                    (test_loss, test_acc), best_solution = self.test_func(
                         population
                     )
-                    if test_acc < self.best_fitness:
-                        self.best_fitness = test_acc
+                    if test_loss < self.best_fitness:
+                        self.best_fitness = test_loss
                         self.best_solution = best_solution
-                    self.fitnesses.append(test_acc.item())
+                    self.test_accuracy_values.append(test_acc)
+                    self.test_loss_values.append(test_loss)
                 else:
                     test_loss, test_acc = None, None
 
@@ -440,4 +443,4 @@ class NDES:
         # log_.to_csv(f"ndes_log_{self.start}.csv")
         #  np.save(f"times_{self.problem_size}.npy", np.array(evaluation_times))
 
-        return self.best_solution, self.fitnesses  # , log_
+        return self.best_solution, (self.fitness_values, self.test_loss_values, self.test_accuracy_values)

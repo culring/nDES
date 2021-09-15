@@ -14,11 +14,11 @@ def seed_everything():
     torch.backends.cudnn.benchmark = False
 
 
-def plot_fitnesses(fitnesses_iterations):
-    fig, axs = plt.subplots(len(fitnesses_iterations), squeeze=False)
+def plot_fitnesses(values_iterations):
+    fig, axs = plt.subplots(len(values_iterations), squeeze=False)
     # plt.yscale("log")
-    for idx, fitnesses in enumerate(fitnesses_iterations):
-        axs[idx, 0].plot(range(len(fitnesses)), fitnesses)
+    for idx, values in enumerate(values_iterations):
+        axs[idx, 0].plot(range(len(values)), values)
     plt.show()
 
 

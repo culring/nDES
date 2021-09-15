@@ -8,10 +8,10 @@ import sys
 
 from ndes.ndes_optimizer import NDESOptimizer as NDESOptimizerNew
 import ndes
-from testing_utils.two_class_mnist import Net, check_accuracy
+from testing_utils.two_class_mnist import Net, check_accuracy, test_func_wrapper
 from testing_utils.two_class_mnist import get_test_data
 from testing_utils.two_class_mnist import get_train_batches
-from testing_utils.utils import test_func_wrapper
+from testing_utils.utils import plot_fitnesses
 
 DEVICE = torch.device("cuda:0")
 DRAW_CHARTS = False
@@ -53,9 +53,9 @@ def single_test(train_batches, train_data_gen, test_data):
         "use_fitness_ewma": True
     }
     test_func = test_func_wrapper(x_val, y_val)
-    model, fitness_iterations = test_new(train_batches, train_data_gen, kwargs, test_func)
+    model, logs = test_new(train_batches, train_data_gen, kwargs, test_func)
 
-    return model, fitness_iterations
+    return model, logs
 
 
 def test():
@@ -64,24 +64,27 @@ def test():
     num_tests = 20
 
     for i in range(num_tests):
-        model, fitness_iterations = single_test(train_batches, train_data_gen, test_data)
+        model, logs = single_test(train_batches, train_data_gen, test_data)
         identifier = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         torch.save(model.state_dict(), f"models/{identifier}_model.pt")
-        torch.save(fitness_iterations, f"models/{identifier}_fitness_iterations.pt")
+        torch.save(logs, f"models/{identifier}_logs.pt")
 
 
 def evaluate_models():
-    x_val, y_val = get_test_data()
-
     directory_filenames = os.listdir("models/")
     for filename in directory_filenames:
         if filename.find("model") == -1:
             continue
+        identifier = filename[:6]
         state_dict = torch.load(f"models/{filename}")
         model = Net().to(DEVICE)
         model.load_state_dict(state_dict)
-        accuracy = check_accuracy(model, x_val, y_val)
-        print(filename, accuracy)
+
+        logs_filename = identifier + "_logs.pt"
+        logs = torch.load(f"models/{logs_filename}")
+        plot_fitnesses([logs[0][0], logs[1][0]])
+        plot_fitnesses([logs[0][1], logs[1][1]])
+        plot_fitnesses([logs[0][2], logs[1][2]])
 
 
 if __name__ == "__main__":
@@ -91,5 +94,5 @@ if __name__ == "__main__":
     elif machine == "server":
         NODES = [ndes.GPUNode(torch.device(0)), ndes.GPUNode(torch.device(1))]
     torch.multiprocessing.set_start_method('spawn')
-    # test()
-    evaluate_models()
+    test()
+    # evaluate_models()

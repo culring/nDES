@@ -194,26 +194,24 @@ class NDESOptimizer:
                         test_func=test_func,
                     )
                 )
-                fitnesses_iterations = []
+                total_logs = []
                 if self.restarts is not None:
                     for i in range(self.restarts):
                         self.kwargs["population_initializer"] = self.population_initializer(
                             best_value, *population_initializer_args
                         )
                         ndes = NDES(log_id=i, **self.kwargs)
-                        best_value, fitnesses = ndes.run()
-                        fitnesses_iterations.append(fitnesses)
+                        best_value, logs = ndes.run()
+                        total_logs.append(logs)
                         del ndes
-                        if self.test_func is not None:
-                            self.test_model(best_value)
                         gc.collect()
                         torch.cuda.empty_cache()
                 else:
                     ndes = NDES(**self.kwargs)
-                    best_value, fitnesses = ndes.run()
-                    fitnesses_iterations.append(fitnesses)
+                    best_value, logs = ndes.run()
+                    total_logs.append(logs)
                 self._reweight_model(self.model, best_value)
-                return self.model, fitnesses_iterations
+                return self.model, total_logs
         finally:
             self.cleanup_nodes()
 

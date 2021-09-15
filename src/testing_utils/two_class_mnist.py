@@ -109,3 +109,20 @@ def get_train_batches():
     data_gen = Cycler(batches)
 
     return batches, data_gen
+
+
+def test_func_wrapper(x_val, y_val):
+    criterion = nn.CrossEntropyLoss()
+
+    def test_func(model):
+        model.eval()
+        with torch.no_grad():
+            out = model(x_val)
+            loss = criterion(out, y_val).item()
+        model.train()
+
+        acc = check_accuracy(model, x_val, y_val)
+
+        return loss, acc
+
+    return test_func

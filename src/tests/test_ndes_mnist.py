@@ -7,11 +7,11 @@ from timeit import default_timer as timer
 from ndes.ndes_optimizer import NDESOptimizer as NDESOptimizerNew
 from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
 import ndes
-from testing_utils.two_class_mnist import check_accuracy
+from testing_utils.two_class_mnist import check_accuracy, test_func_wrapper
 from testing_utils.two_class_mnist import Net
 from testing_utils.two_class_mnist import get_test_data
 from testing_utils.two_class_mnist import get_train_batches
-from testing_utils.utils import plot_fitnesses, seed_everything, test_func_wrapper
+from testing_utils.utils import plot_fitnesses, seed_everything
 
 DEVICE = torch.device("cuda:0")
 DRAW_CHARTS = False
@@ -45,10 +45,12 @@ def test_new(batches, data_gen, kwargs, test_func=None):
         **kwargs
     )
 
-    best, fitnesses_iterations = des_optim.run(test_func)
+    best, logs = des_optim.run(test_func)
 
     if DRAW_CHARTS:
-        plot_fitnesses(fitnesses_iterations)
+        plot_fitnesses([logs[0][0], logs[1][0]])
+        plot_fitnesses([logs[0][1], logs[1][1]])
+        plot_fitnesses([logs[0][2], logs[1][2]])
 
     return best
 
@@ -60,8 +62,8 @@ def test():
     kwargs = {
         "restarts": 2,
         "criterion": nn.CrossEntropyLoss(),
-        # "budget": 100000,
-        "budget": 3000,
+        "budget": 100000,
+        # "budget": 3000,
         "history": 16,
         "nn_train": True,
         "lower": -2,
