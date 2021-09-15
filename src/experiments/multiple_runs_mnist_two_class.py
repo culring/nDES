@@ -1,13 +1,14 @@
 import torch
 import torch.nn as nn
 
+import os
 import random
 import string
 import sys
 
 from ndes.ndes_optimizer import NDESOptimizer as NDESOptimizerNew
 import ndes
-from testing_utils.two_class_mnist import Net
+from testing_utils.two_class_mnist import Net, check_accuracy
 from testing_utils.two_class_mnist import get_test_data
 from testing_utils.two_class_mnist import get_train_batches
 from testing_utils.utils import test_func_wrapper
@@ -69,6 +70,20 @@ def test():
         torch.save(fitness_iterations, f"models/{identifier}_fitness_iterations.pt")
 
 
+def evaluate_models():
+    x_val, y_val = get_test_data()
+
+    directory_filenames = os.listdir("models/")
+    for filename in directory_filenames:
+        if filename.find("model") == -1:
+            continue
+        state_dict = torch.load(f"models/{filename}")
+        model = Net().to(DEVICE)
+        model.load_state_dict(state_dict)
+        accuracy = check_accuracy(model, x_val, y_val)
+        print(filename, accuracy)
+
+
 if __name__ == "__main__":
     machine = sys.argv[1]
     if machine == "pc":
@@ -76,4 +91,5 @@ if __name__ == "__main__":
     elif machine == "server":
         NODES = [ndes.GPUNode(torch.device(0)), ndes.GPUNode(torch.device(1))]
     torch.multiprocessing.set_start_method('spawn')
-    test()
+    # test()
+    evaluate_models()
