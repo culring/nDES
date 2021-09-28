@@ -7,7 +7,7 @@ from timeit import default_timer as timer
 from ndes.ndes_optimizer import NDESOptimizer as NDESOptimizerNew
 from ndes_optimizer_original import BasenDESOptimizer as BasenDESOptimizerOld
 import ndes
-from testing_utils.two_class_mnist import check_accuracy, test_func_wrapper
+from testing_utils.two_class_mnist import check_accuracy, test_func_wrapper, eval_train_data
 from testing_utils.two_class_mnist import Net
 from testing_utils.two_class_mnist import get_test_data
 from testing_utils.two_class_mnist import get_train_batches
@@ -79,16 +79,21 @@ def test():
 
     train_batches, train_data_gen = get_train_batches()
     test_func = test_func_wrapper(x_val, y_val)
-    # model_old = test_old(train_data_gen, kwargs, test_func)
-    model_new = test_new(train_batches, train_data_gen, kwargs, test_func)
+    model_old = test_old(train_data_gen, kwargs, test_func)
+    # model_new = test_new(train_batches, train_data_gen, kwargs, test_func)
 
-    accuracy_old = 98.75
+    loss_old = eval_train_data(model_old)
+    # loss_new = eval_train_data(model_new)
+
+    print(loss_old)
+
+    # accuracy_old = 98.75
     # accuracy_old = check_accuracy(model_old, x_val, y_val)
-    accuracy_new = check_accuracy(model_new, x_val, y_val)
+    # accuracy_new = check_accuracy(model_new, x_val, y_val)
 
-    print(f"accuracy_old = {accuracy_old}, accuracy_new = {accuracy_new}")
+    # print(f"accuracy_old = {accuracy_old}, accuracy_new = {accuracy_new}")
 
-    assert abs(accuracy_old - accuracy_new) < 0.5, "Models don't match"
+    # assert abs(accuracy_old - accuracy_new) < 0.5, "Models don't match"
 
 
 if __name__ == "__main__":

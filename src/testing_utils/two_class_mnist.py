@@ -111,6 +111,41 @@ def get_train_batches():
     return batches, data_gen
 
 
+def get_train_data():
+    mean = (0.2860405969887955,)
+    std = (0.3530242445149223,)
+    train_dataset = datasets.FashionMNIST(
+        '../data', train=True, download=True,
+        transform=transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std)
+        ])
+    )
+
+    samples = extract_two_class_dataset_mnist(train_dataset)
+    # CNN expects batches to be of shape (n_samples, channels, height_width)
+    samples = (samples[0].unsqueeze(1).to(DEVICE), samples[1].to(DEVICE))
+    my_dataset = MyDataset(samples)
+    # data_loader = data.DataLoader(my_dataset, len(samples[1]))
+    data_loader = data.DataLoader(my_dataset, len(my_dataset))
+    x_train, y_train = next(iter(data_loader))
+
+    return x_train, y_train
+
+
+def eval_train_data(model):
+    x_train, y_train = get_train_data()
+    criterion = nn.CrossEntropyLoss()
+
+    model.eval()
+    with torch.no_grad():
+        out = model(x_train)
+        loss = criterion(out, y_train).item()
+    model.train()
+
+    return loss
+
+
 def test_func_wrapper(x_val, y_val):
     criterion = nn.CrossEntropyLoss()
 
